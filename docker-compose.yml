@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: exitbutton
+      POSTGRES_PASSWORD: exitbutton_dev
+      POSTGRES_DB: exitbutton
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+    env_file:
+      - packages/backend/.env
+    environment:
+      DATABASE_URL: postgresql://exitbutton:exitbutton_dev@postgres:5432/exitbutton
+
+volumes:
+  postgres_data:

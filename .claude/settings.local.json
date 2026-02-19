@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(npm install)",
+      "Bash(npm run build:*)",
+      "Bash(gzip:*)",
+      "Bash(open:*)",
+      "WebSearch",
+      "WebFetch(domain:elevenlabs.io)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(python3 -m http.server:*)",
+      "Bash(pkill:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsx:*)",
+      "Bash(pnpm build:embed:*)",
+      "Bash(npx tsc:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(export PATH=\"$HOME/.local/share/pnpm:$HOME/.nvm/versions/node/v20.19.0/bin:$PATH\")",
+      "Bash(npm exec:*)",
+      "Bash(npx pnpm --version)",
+      "Bash(curl:*)",
+      "WebFetch(domain:www.tranzmitai.com)",
+      "Bash(find:*)",
+      "Bash(pnpm build:react:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm add:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}
