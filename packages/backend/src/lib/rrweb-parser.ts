@@ -1,6 +1,16 @@
-import { EventType } from 'rrweb';
 import { gunzipSync } from 'zlib';
 import { logger } from './logger';
+
+// Inline rrweb EventType enum to avoid ESM-only dependency
+enum EventType {
+    DomContentLoaded = 0,
+    Load = 1,
+    FullSnapshot = 2,
+    IncrementalSnapshot = 3,
+    Meta = 4,
+    Custom = 5,
+    Plugin = 6,
+}
 
 enum NodeType {
     Document = 0,
