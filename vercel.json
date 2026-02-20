@@ -1,7 +1,7 @@
 {
   "version": 2,
   "installCommand": "pnpm install",
-  "buildCommand": "pnpm --filter @tranzmit/exit-button-core build && pnpm --filter @tranzmit/exit-button-embed build && pnpm --filter @tranzmit/exit-button-react build",
+  "buildCommand": "pnpm --filter @tranzmit/exit-button-core build && pnpm --filter @tranzmit/exit-button-embed build && pnpm --filter @tranzmit/exit-button-react build && mkdir -p public",
   "outputDirectory": "public",
   "functions": {
     "api/index.ts": {
