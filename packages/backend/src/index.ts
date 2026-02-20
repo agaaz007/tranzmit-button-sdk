@@ -96,7 +96,13 @@ app.post('/api/exit-session/prefetch', authenticate, prefetchRateLimit, async (r
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
 
-    const { userId, planName, mrr, accountAge } = parsed.data;
+    const { userId, planName, mrr, accountAge, sessionAnalysis } = parsed.data;
+
+    // Client explicitly opted out of session analysis
+    if (sessionAnalysis === false) {
+      return res.json({ status: 'cached' });
+    }
+
     const tenantId = req.tenant?.id || 'default';
     const key = prefetchKey(tenantId, userId);
 
@@ -149,7 +155,7 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
 
-    const { userId: rawUserId, planName, mrr, accountAge } = parsed.data;
+    const { userId: rawUserId, planName, mrr, accountAge, sessionAnalysis } = parsed.data;
     const userId = rawUserId || `anon_${Date.now()}`;
 
     const sessionId = `exit_${Date.now()}_${userId}`;
@@ -167,7 +173,8 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
       projectId: tenantConfig.posthogProjectId || '',
       host: tenantConfig.posthogHost,
     };
-    const hasPosthog = !!(posthogCreds.apiKey && posthogCreds.projectId);
+    // Skip session analysis if client explicitly opted out
+    const hasPosthog = sessionAnalysis !== false && !!(posthogCreds.apiKey && posthogCreds.projectId);
 
     // Check prefetch cache before running PostHog analysis
     const tenantId = req.tenant?.id || 'default';

@@ -239,6 +239,7 @@ class ExitButton implements ExitButtonInstance {
         mrr: this.config.mrr,
         accountAge: this.config.accountAge,
         metadata: this.config.metadata,
+        sessionAnalysis: this.config.sessionAnalysis,
       });
 
       this.sessionId = response.sessionId;
@@ -275,6 +276,7 @@ class ExitButton implements ExitButtonInstance {
         planName: this.config.planName,
         mrr: this.config.mrr,
         accountAge: this.config.accountAge,
+        sessionAnalysis: this.config.sessionAnalysis,
       })
       .catch(() => {
         // fire-and-forget — don't surface prefetch errors
@@ -362,6 +364,7 @@ class ExitButton implements ExitButtonInstance {
         const data = await this.apiClient.initiate({
           userId: resolvedUserId,
           planName: this.config.planName,
+          sessionAnalysis: this.config.sessionAnalysis,
           mrr: this.config.mrr,
           accountAge: this.config.accountAge,
         });
@@ -959,6 +962,7 @@ function autoInit(): void {
     backendUrl: script.dataset.backendUrl,
     interventionAgentId: script.dataset.interventionAgentId || script.dataset.elevenLabsAgentId,
     posthogDistinctId: script.dataset.posthogDistinctId,
+    sessionAnalysis: script.dataset.sessionAnalysis !== undefined ? script.dataset.sessionAnalysis !== 'false' : undefined,
   };
 
   // Wait for DOM to be ready

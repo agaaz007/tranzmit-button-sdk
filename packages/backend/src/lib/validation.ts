@@ -9,6 +9,7 @@ export const InitiateRequestSchema = z.object({
   planName: z.string().optional(),
   mrr: z.number().nonnegative().optional(),
   accountAge: z.string().optional(),
+  sessionAnalysis: z.boolean().optional(),
 });
 
 export const CompleteRequestSchema = z.object({
@@ -24,6 +25,7 @@ export const PrefetchRequestSchema = z.object({
   planName: z.string().optional(),
   mrr: z.number().nonnegative().optional(),
   accountAge: z.string().optional(),
+  sessionAnalysis: z.boolean().optional(),
 });
 
 export type InitiateRequest = z.infer<typeof InitiateRequestSchema>;

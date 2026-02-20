@@ -25,6 +25,8 @@ export interface UseCancelFlowOptions {
   accountAge?: string;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
+  /** Enable PostHog session replay analysis (default: true). Set to false to skip. */
+  sessionAnalysis?: boolean;
   /** Callback when offers are received */
   onOffer?: (offers: Offer[]) => void;
   /** Callback when session completes */
@@ -96,6 +98,7 @@ export function useCancelFlow(options: UseCancelFlowOptions): UseCancelFlowRetur
         mrr: optionsRef.current.mrr,
         accountAge: optionsRef.current.accountAge,
         metadata: optionsRef.current.metadata,
+        sessionAnalysis: optionsRef.current.sessionAnalysis,
       });
 
       setSessionId(response.sessionId);

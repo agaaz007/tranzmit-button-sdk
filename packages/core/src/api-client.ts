@@ -41,6 +41,7 @@ export class ExitButtonApiClient {
     mrr?: number;
     accountAge?: string;
     metadata?: Record<string, unknown>;
+    sessionAnalysis?: boolean;
   }): Promise<InitiateResponse> {
     return this.request<InitiateResponse>('/api/exit-session/initiate', {
       method: 'POST',
@@ -75,6 +76,7 @@ export class ExitButtonApiClient {
     planName?: string;
     mrr?: number;
     accountAge?: string;
+    sessionAnalysis?: boolean;
   }): Promise<PrefetchResponse> {
     return this.request<PrefetchResponse>('/api/exit-session/prefetch', {
       method: 'POST',

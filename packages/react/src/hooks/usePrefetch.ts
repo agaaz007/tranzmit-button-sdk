@@ -19,6 +19,8 @@ export interface UsePrefetchOptions {
   mrr?: number;
   /** Account age (e.g., "8 months") */
   accountAge?: string;
+  /** Enable PostHog session replay analysis (default: true). Set to false to skip. */
+  sessionAnalysis?: boolean;
 }
 
 export interface UsePrefetchReturn {
@@ -46,6 +48,7 @@ export function usePrefetch(options: UsePrefetchOptions): UsePrefetchReturn {
         planName: optionsRef.current.planName,
         mrr: optionsRef.current.mrr,
         accountAge: optionsRef.current.accountAge,
+        sessionAnalysis: optionsRef.current.sessionAnalysis,
       })
       .catch(() => {
         // fire-and-forget — don't surface prefetch errors

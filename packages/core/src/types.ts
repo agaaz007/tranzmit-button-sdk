@@ -18,6 +18,8 @@ export interface ExitButtonConfig {
   accountAge?: string;
   /** Additional metadata about the user */
   metadata?: Record<string, unknown>;
+  /** Enable PostHog session replay analysis (default: true). Set to false to skip session analysis entirely. */
+  sessionAnalysis?: boolean;
   /** Analytics provider for friction detection */
   analyticsProvider?: 'posthog' | 'mixpanel' | 'amplitude' | 'segment' | 'custom';
   /** Callback when offers are generated */
