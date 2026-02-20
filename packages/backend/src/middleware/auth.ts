@@ -6,7 +6,6 @@
  * Falls back to global env var defaults if no DB or tenant not found.
  */
 
-import { Request, Response, NextFunction } from 'express';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 
@@ -78,7 +77,7 @@ async function loadTenantFromDb(keyPrefix: string): Promise<{ id: string; config
 
     if (result.length === 0) return null;
 
-    const row = result[0];
+    const row = result[0]!;
     return {
       id: row.tenantId,
       config: {
@@ -95,7 +94,7 @@ async function loadTenantFromDb(keyPrefix: string): Promise<{ id: string; config
   }
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction): void {
+export function authenticate(req: any, res: any, next: any): void {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -138,7 +137,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
       }
       next();
     })
-    .catch((err) => {
+    .catch((err: any) => {
       logger.warn({ err }, 'Tenant config lookup failed, using defaults');
       req.tenant = {
         id: 'default',

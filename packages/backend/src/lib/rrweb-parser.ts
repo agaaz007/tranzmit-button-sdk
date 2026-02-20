@@ -254,7 +254,7 @@ function getSemanticName(info: NodeInfo): string {
     return tag;
 }
 
-function buildNodeMap(node: any, map: Map<number, NodeInfo>, parentText?: string) {
+function buildNodeMap(node: any, map: Map<number, NodeInfo>, _parentText?: string) {
     if (!node) return;
 
     if (node.id) {
@@ -349,7 +349,7 @@ export function parseRRWebSession(events: RRWebEvent[]): SemanticSession {
         };
     }
 
-    const startTime = validEvents[0].timestamp;
+    const startTime = validEvents[0]!.timestamp;
     const nodeMap = new Map<number, NodeInfo>();
 
     logger.info({ validEventCount: validEvents.length }, '[RRWeb Parser] Processing valid events');
@@ -562,11 +562,11 @@ export function parseRRWebSession(events: RRWebEvent[]): SemanticSession {
                     const lookAheadLimit = Math.min(index + 100, events.length);
                     let responseFound = false;
                     for (let i = index + 1; i < lookAheadLimit; i++) {
-                        const nextEvent = events[i];
+                        const nextEvent = events[i]!;
                         if (nextEvent.timestamp - event.timestamp > 1000) break;
                         if (
                             nextEvent.type === EventType.IncrementalSnapshot &&
-                            nextEvent.data.source === IncrementalSource.Mutation
+                            nextEvent.data?.source === IncrementalSource.Mutation
                         ) {
                             responseFound = true;
                             break;
@@ -1160,8 +1160,9 @@ export function parseRRWebSession(events: RRWebEvent[]): SemanticSession {
         }
     });
 
-    const totalDuration = formatTime(events[events.length - 1].timestamp - startTime);
-    const sessionDurationMs = events[events.length - 1].timestamp - startTime;
+    const lastEvent = events[events.length - 1]!;
+    const totalDuration = formatTime(lastEvent.timestamp - startTime);
+    const sessionDurationMs = lastEvent.timestamp - startTime;
     
     // Calculate behavioral signals
     const behavioralSignals = {
