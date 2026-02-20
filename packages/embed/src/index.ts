@@ -70,9 +70,11 @@ interface ExtendedEmbedConfig extends EmbedConfig {
   elevenLabsApiKey?: string;
   /** ElevenLabs voice ID for legacy TTS mode (defaults to Rachel) */
   elevenLabsVoiceId?: string;
-  /** ElevenLabs Agent ID for full conversational AI (recommended) */
+  /** Intervention agent ID for the AI exit interview */
+  interventionAgentId?: string;
+  /** @deprecated Use interventionAgentId instead */
   elevenLabsAgentId?: string;
-  /** Signed URL for private ElevenLabs agents */
+  /** Signed URL for private agents */
   elevenLabsSignedUrl?: string;
   /** Backend URL for PostHog integration */
   backendUrl?: string;
@@ -81,18 +83,62 @@ interface ExtendedEmbedConfig extends EmbedConfig {
 }
 
 /**
- * Auto-detect PostHog distinct_id from the page's PostHog JS SDK.
- * Checks window.posthog (standard) and _POSTHOG_ variants.
- * Returns null if PostHog JS is not loaded.
+ * Auto-detect the logged-in user's ID from common analytics/auth SDKs on the page.
+ * Checks (in order): PostHog, Segment, Mixpanel, Amplitude, Intercom, Crisp,
+ * meta tags, and data attributes on <body>.
+ * Returns null if no user ID can be detected.
  */
-function detectPosthogDistinctId(): string | null {
+function detectUserId(): string | null {
+  const w = window as any;
+
   try {
-    const ph = (window as any).posthog;
-    if (ph && typeof ph.get_distinct_id === 'function') {
-      const id = ph.get_distinct_id();
+    // 1. PostHog
+    if (w.posthog && typeof w.posthog.get_distinct_id === 'function') {
+      const id = w.posthog.get_distinct_id();
       if (id && typeof id === 'string') return id;
     }
-  } catch { /* ignore */ }
+
+    // 2. Segment Analytics
+    if (w.analytics && typeof w.analytics.user === 'function') {
+      const user = w.analytics.user();
+      const id = user?.id?.() || user?.anonymousId?.();
+      if (id && typeof id === 'string') return id;
+    }
+
+    // 3. Mixpanel
+    if (w.mixpanel && typeof w.mixpanel.get_distinct_id === 'function') {
+      const id = w.mixpanel.get_distinct_id();
+      if (id && typeof id === 'string') return id;
+    }
+
+    // 4. Amplitude
+    if (w.amplitude) {
+      const inst = typeof w.amplitude.getInstance === 'function' ? w.amplitude.getInstance() : w.amplitude;
+      const id = inst?.getUserId?.() || inst?.getDeviceId?.();
+      if (id && typeof id === 'string') return id;
+    }
+
+    // 5. Intercom
+    if (w.Intercom && w.intercomSettings) {
+      const id = w.intercomSettings.user_id || w.intercomSettings.email;
+      if (id && typeof id === 'string') return id;
+    }
+
+    // 6. Crisp
+    if (w.$crisp && typeof w.$crisp.get === 'function') {
+      const email = w.$crisp.get('user:email');
+      if (email && typeof email === 'string') return email;
+    }
+
+    // 7. Meta tag: <meta name="user-id" content="...">
+    const meta = document.querySelector('meta[name="user-id"]') as HTMLMetaElement;
+    if (meta?.content) return meta.content;
+
+    // 8. Data attribute on body: <body data-user-id="...">
+    const bodyUserId = document.body?.dataset?.userId;
+    if (bodyUserId) return bodyUserId;
+
+  } catch { /* ignore detection failures */ }
   return null;
 }
 
@@ -114,18 +160,33 @@ class ExitButton implements ExitButtonInstance {
   constructor(config: ExtendedEmbedConfig) {
     this.config = config;
     this.mockMode = config.mockMode || config.apiKey.startsWith('eb_test_') || config.apiKey === 'mock';
-    this.useElevenLabsAgent = !!(config.elevenLabsAgentId || config.elevenLabsSignedUrl);
 
-    // Use backendUrl if provided, otherwise fall back (required for non-mock mode)
-    const baseUrl = config.backendUrl || 'https://api.tranzmitai.com/v1';
-    this.apiClient = createApiClient({ apiKey: config.apiKey, baseUrl });
+    // Resolve interventionAgentId (new name) from elevenLabsAgentId (legacy)
+    if (config.interventionAgentId) {
+      config.elevenLabsAgentId = config.interventionAgentId;
+    }
+    this.useElevenLabsAgent = !!(config.elevenLabsAgentId || config.elevenLabsSignedUrl || config.backendUrl);
 
-    // Auto-detect PostHog distinct_id if not explicitly provided
+    // Default backend URL to production
+    if (!config.backendUrl) {
+      config.backendUrl = 'https://api.tranzmitai.com/v1';
+    }
+    this.apiClient = createApiClient({ apiKey: config.apiKey, baseUrl: config.backendUrl });
+
+    // Auto-detect userId if not explicitly provided
+    if (!config.userId) {
+      const detected = detectUserId();
+      if (detected) {
+        this.config.userId = detected;
+        console.log('[ExitButton] Auto-detected userId:', detected);
+      }
+    }
+
+    // Also detect PostHog distinct_id for analytics context (may differ from userId)
     if (!config.posthogDistinctId) {
-      const detected = detectPosthogDistinctId();
+      const detected = detectUserId(); // re-uses same detection
       if (detected) {
         this.config.posthogDistinctId = detected;
-        console.log('[ExitButton] Auto-detected PostHog distinct_id:', detected);
       }
     }
 
@@ -260,11 +321,14 @@ class ExitButton implements ExitButtonInstance {
       try {
         this.modal?.setStatusText('Analyzing your usage history...');
 
-        // Re-check for PostHog distinct_id right before the call (may have loaded late)
-        const posthogDistinctId = this.config.posthogDistinctId || detectPosthogDistinctId() || this.config.userId;
+        // Re-detect userId right before the call (analytics SDKs may have loaded late)
+        if (!this.config.userId) {
+          this.config.userId = detectUserId() ?? undefined;
+        }
+        const resolvedUserId = this.config.posthogDistinctId || this.config.userId || 'anonymous_' + Date.now();
 
         const data = await this.apiClient.initiate({
-          userId: posthogDistinctId,
+          userId: resolvedUserId,
           planName: this.config.planName,
           mrr: this.config.mrr,
           accountAge: this.config.accountAge,
@@ -272,8 +336,8 @@ class ExitButton implements ExitButtonInstance {
 
         console.log('[ExitButton] Session initiated:', data.sessionId);
 
-        // Use backend-provided agent ID and signed URL if available
-        if (data.agentId) agentId = data.agentId;
+        // Use backend-provided values, but customer's interventionAgentId takes priority
+        if (data.agentId && !this.config.interventionAgentId) agentId = data.agentId;
         if (data.signedUrl) signedUrl = data.signedUrl;
         if (data.context) posthogContext = data.context;
         if (data.dynamicVariables) dynamicVariables = data.dynamicVariables;
@@ -825,22 +889,21 @@ function autoInit(): void {
   if (!script) return;
 
   const apiKey = script.dataset.apiKey;
-  const userId = script.dataset.userId;
 
-  if (!apiKey || !userId) {
-    console.warn('ExitButton: data-api-key and data-user-id are required');
+  if (!apiKey) {
+    console.warn('ExitButton: data-api-key is required');
     return;
   }
 
   const config: ExtendedEmbedConfig = {
     apiKey,
-    userId,
+    userId: script.dataset.userId, // optional — auto-detected if not set
     planName: script.dataset.planName,
     mrr: script.dataset.mrr ? parseFloat(script.dataset.mrr) : undefined,
     accountAge: script.dataset.accountAge,
     attach: script.dataset.attach,
     backendUrl: script.dataset.backendUrl,
-    elevenLabsAgentId: script.dataset.elevenLabsAgentId,
+    interventionAgentId: script.dataset.interventionAgentId || script.dataset.elevenLabsAgentId,
     posthogDistinctId: script.dataset.posthogDistinctId,
   };
 

@@ -1,22 +1,26 @@
 /**
  * Centralized configuration with validation
  * Fails fast at startup if required env vars are missing
+ *
+ * PostHog and ElevenLabs credentials are optional here because
+ * they come per-tenant from the database in production.
+ * Global env vars serve as fallback defaults.
  */
 
 import 'dotenv/config';
 import { z } from 'zod';
 
 const configSchema = z.object({
-  // PostHog
-  posthogApiKey: z.string().min(1, 'POSTHOG_API_KEY is required'),
-  posthogProjectId: z.string().min(1, 'POSTHOG_PROJECT_ID is required'),
+  // PostHog (optional — per-tenant credentials from DB take priority)
+  posthogApiKey: z.string().optional(),
+  posthogProjectId: z.string().optional(),
   posthogHost: z.string().url().default('https://app.posthog.com'),
 
-  // ElevenLabs
-  elevenLabsApiKey: z.string().min(1, 'ELEVENLABS_API_KEY is required'),
-  elevenLabsAgentId: z.string().min(1, 'ELEVENLABS_AGENT_ID is required'),
+  // ElevenLabs (optional — per-tenant credentials from DB take priority)
+  elevenLabsApiKey: z.string().optional(),
+  elevenLabsAgentId: z.string().optional(),
 
-  // Groq
+  // Groq (global — Tranzmit's AI analysis service)
   groqApiKey: z.string().min(1, 'GROQ_API_KEY is required'),
 
   // Database (optional — app works without it for backward compatibility)

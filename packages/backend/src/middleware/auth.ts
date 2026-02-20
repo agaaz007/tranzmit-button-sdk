@@ -1,22 +1,27 @@
 /**
  * Authentication middleware for Exit Button API
  *
- * Phase 1 (current): Validates API key format and attaches a basic tenant object.
- * Phase 2 (full):    Lookup by key_prefix (first 12 chars), verify sha256(full_key)
- *                    against key_hash in the database, and check revoked_at is null.
+ * Validates API key format (eb_live_ or eb_test_ prefix, min 20 chars).
+ * Loads per-tenant configuration (PostHog, ElevenLabs) from DB when available.
+ * Falls back to global env var defaults if no DB or tenant not found.
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { config } from '../config';
+import { logger } from '../lib/logger';
 
-// ---------------------------------------------------------------------------
-// Tenant type & Express module augmentation
-// ---------------------------------------------------------------------------
+export interface TenantConfig {
+  posthogApiKey?: string;
+  posthogProjectId?: string;
+  posthogHost: string;
+  elevenLabsApiKey?: string;
+  interventionAgentId?: string;
+}
 
 export interface Tenant {
-  /** Tenant / organization ID */
   id: string;
-  /** First 12 characters of the API key (safe to log) */
   apiKeyPrefix: string;
+  config: TenantConfig;
 }
 
 declare global {
@@ -27,45 +32,69 @@ declare global {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Accepted key prefixes */
 const VALID_PREFIXES = ['eb_live_', 'eb_test_'] as const;
-
-/** Minimum total length of a valid API key */
 const MIN_KEY_LENGTH = 20;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Returns true when `key` matches the expected API key format:
- *   - starts with `eb_live_` or `eb_test_`
- *   - is at least 20 characters long
- */
 function isValidKeyFormat(key: string): boolean {
-  if (key.length < MIN_KEY_LENGTH) {
-    return false;
-  }
+  if (key.length < MIN_KEY_LENGTH) return false;
   return VALID_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
-// ---------------------------------------------------------------------------
-// Middleware
-// ---------------------------------------------------------------------------
+function getDefaultConfig(): TenantConfig {
+  return {
+    posthogApiKey: config.posthogApiKey,
+    posthogProjectId: config.posthogProjectId,
+    posthogHost: config.posthogHost,
+    elevenLabsApiKey: config.elevenLabsApiKey,
+    interventionAgentId: config.elevenLabsAgentId,
+  };
+}
 
 /**
- * Express middleware that authenticates incoming requests via Bearer token.
- *
- * Expects the `Authorization` header in the form:
- *   Authorization: Bearer eb_live_xxxxxxxx   (or eb_test_xxxxxxxx)
- *
- * On success, attaches `req.tenant` with the tenant metadata.
- * On failure, responds with 401.
+ * Load tenant config from DB by API key prefix.
+ * Returns null if DB is unavailable or tenant not found.
  */
+async function loadTenantFromDb(keyPrefix: string): Promise<{ id: string; config: TenantConfig } | null> {
+  try {
+    // Dynamic import to avoid circular dependency and handle missing DB gracefully
+    const { db, apiKeys, tenants } = await import('../db');
+    const { eq } = await import('drizzle-orm');
+
+    if (!db) return null;
+
+    const result = await db
+      .select({
+        tenantId: tenants.id,
+        posthogApiKey: tenants.posthogApiKey,
+        posthogProjectId: tenants.posthogProjectId,
+        posthogHost: tenants.posthogHost,
+        elevenLabsApiKey: tenants.elevenLabsApiKey,
+        interventionAgentId: tenants.interventionAgentId,
+      })
+      .from(apiKeys)
+      .innerJoin(tenants, eq(apiKeys.tenantId, tenants.id))
+      .where(eq(apiKeys.keyPrefix, keyPrefix))
+      .limit(1);
+
+    if (result.length === 0) return null;
+
+    const row = result[0];
+    return {
+      id: row.tenantId,
+      config: {
+        posthogApiKey: row.posthogApiKey || undefined,
+        posthogProjectId: row.posthogProjectId || undefined,
+        posthogHost: row.posthogHost || 'https://app.posthog.com',
+        elevenLabsApiKey: row.elevenLabsApiKey || undefined,
+        interventionAgentId: row.interventionAgentId || undefined,
+      },
+    };
+  } catch (err) {
+    logger.warn({ err }, 'Failed to load tenant from DB');
+    return null;
+  }
+}
+
 export function authenticate(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
 
@@ -81,20 +110,41 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     return;
   }
 
-  // ------------------------------------------------------------------
-  // Phase 1 (pre-database): accept any correctly-formatted key.
-  // Phase 2 TODO:
-  //   1. Extract key_prefix = key.substring(0, 12)
-  //   2. SELECT * FROM api_keys WHERE key_prefix = $1
-  //   3. Verify crypto.createHash('sha256').update(key).digest('hex') === row.key_hash
-  //   4. Check row.revoked_at IS NULL
-  //   5. Attach full tenant record from the tenants table
-  // ------------------------------------------------------------------
+  const keyPrefix = key.substring(0, 12);
 
-  req.tenant = {
-    id: 'default',
-    apiKeyPrefix: key.substring(0, 12),
-  };
-
-  next();
+  // Try to load tenant config from DB, fall back to global defaults
+  loadTenantFromDb(keyPrefix)
+    .then((tenant) => {
+      if (tenant) {
+        // Merge: tenant-specific values override, fall back to global for any missing
+        const defaults = getDefaultConfig();
+        req.tenant = {
+          id: tenant.id,
+          apiKeyPrefix: keyPrefix,
+          config: {
+            posthogApiKey: tenant.config.posthogApiKey || defaults.posthogApiKey,
+            posthogProjectId: tenant.config.posthogProjectId || defaults.posthogProjectId,
+            posthogHost: tenant.config.posthogHost || defaults.posthogHost,
+            elevenLabsApiKey: tenant.config.elevenLabsApiKey || defaults.elevenLabsApiKey,
+            interventionAgentId: tenant.config.interventionAgentId || defaults.interventionAgentId,
+          },
+        };
+      } else {
+        req.tenant = {
+          id: 'default',
+          apiKeyPrefix: keyPrefix,
+          config: getDefaultConfig(),
+        };
+      }
+      next();
+    })
+    .catch((err) => {
+      logger.warn({ err }, 'Tenant config lookup failed, using defaults');
+      req.tenant = {
+        id: 'default',
+        apiKeyPrefix: keyPrefix,
+        config: getDefaultConfig(),
+      };
+      next();
+    });
 }

@@ -22,8 +22,9 @@ export const tenants = pgTable('tenants', {
   allowedOrigins: text('allowed_origins').array().default([]),
   posthogApiKey: text('posthog_api_key'),
   posthogProjectId: text('posthog_project_id'),
+  posthogHost: text('posthog_host'),
   elevenLabsApiKey: text('elevenlabs_api_key'),
-  elevenLabsAgentId: text('elevenlabs_agent_id'),
+  interventionAgentId: text('intervention_agent_id'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

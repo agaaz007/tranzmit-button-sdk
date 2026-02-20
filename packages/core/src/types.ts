@@ -8,8 +8,8 @@
 export interface ExitButtonConfig {
   /** API key for authentication (eb_live_xxxx or eb_test_xxxx) */
   apiKey: string;
-  /** Unique identifier for the user */
-  userId: string;
+  /** Unique identifier for the user (auto-detected from PostHog, Segment, Mixpanel, Amplitude, Intercom if not provided) */
+  userId?: string;
   /** Name of the user's current plan */
   planName?: string;
   /** Monthly Recurring Revenue in dollars */
@@ -74,8 +74,8 @@ export type SessionStatus =
 export interface Session {
   /** Unique session identifier */
   id: string;
-  /** User identifier */
-  userId: string;
+  /** User identifier (may be auto-detected) */
+  userId?: string;
   /** Current session status */
   status: SessionStatus;
   /** Voice conversation transcript */

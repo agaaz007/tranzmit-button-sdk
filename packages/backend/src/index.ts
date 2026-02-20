@@ -11,7 +11,7 @@ import cors from 'cors';
 import pinoHttp from 'pino-http';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
-import { analyzeUserSessions } from './lib/posthog-session-analysis';
+import { analyzeUserSessions, PostHogCredentials } from './lib/posthog-session-analysis';
 import { InitiateRequestSchema, CompleteRequestSchema } from './lib/validation';
 import { authenticate } from './middleware/auth';
 import { globalRateLimit, initiateRateLimit, completeRateLimit } from './middleware/rate-limit';
@@ -33,12 +33,12 @@ app.use(express.json());
 /**
  * Get signed URL from ElevenLabs for private agent access
  */
-async function getElevenLabsSignedUrl(agentId: string): Promise<string> {
+async function getElevenLabsSignedUrl(agentId: string, elevenLabsApiKey: string): Promise<string> {
   const response = await fetch(
     `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${agentId}`,
     {
       headers: {
-        'xi-api-key': config.elevenLabsApiKey,
+        'xi-api-key': elevenLabsApiKey,
       },
     }
   );
@@ -94,28 +94,46 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
       return res.status(400).json({ error: 'Validation failed', details: errors });
     }
 
-    const { userId, planName, mrr, accountAge } = parsed.data;
+    const { userId: rawUserId, planName, mrr, accountAge } = parsed.data;
+    const userId = rawUserId || `anon_${Date.now()}`;
 
     const sessionId = `exit_${Date.now()}_${userId}`;
     const startTime = Date.now();
     logger.info({ userId, sessionId }, 'Initiating exit session');
+
+    // Get tenant-specific credentials
+    const tenantConfig = req.tenant!.config;
+    const agentId = tenantConfig.interventionAgentId;
+    const elevenLabsApiKey = tenantConfig.elevenLabsApiKey;
+
+    // Build PostHog credentials from tenant config
+    const posthogCreds: PostHogCredentials = {
+      apiKey: tenantConfig.posthogApiKey || '',
+      projectId: tenantConfig.posthogProjectId || '',
+      host: tenantConfig.posthogHost,
+    };
+    const hasPosthog = !!(posthogCreds.apiKey && posthogCreds.projectId);
 
     // Run signed URL fetch AND session analysis IN PARALLEL
     const tSignedUrl = Date.now();
     let signedUrl_ms = 0;
 
     const [signedUrlResult, analysisResult] = await Promise.all([
-      // Task 1: Get signed URL
-      getElevenLabsSignedUrl(config.elevenLabsAgentId)
-        .then(url => { signedUrl_ms = Date.now() - tSignedUrl; return url; })
-        .catch(e => {
-          signedUrl_ms = Date.now() - tSignedUrl;
-          logger.warn({ err: e.message }, 'Could not get signed URL');
-          return null;
-        }),
+      // Task 1: Get signed URL (requires ElevenLabs API key + agent ID)
+      (agentId && elevenLabsApiKey)
+        ? getElevenLabsSignedUrl(agentId, elevenLabsApiKey)
+            .then(url => { signedUrl_ms = Date.now() - tSignedUrl; return url; })
+            .catch(e => {
+              signedUrl_ms = Date.now() - tSignedUrl;
+              logger.warn({ err: e.message }, 'Could not get signed URL');
+              return null;
+            })
+        : Promise.resolve(null).then(() => { signedUrl_ms = 0; return null; }),
 
-      // Task 2: Full session analysis (PostHog + rrweb + AI)
-      analyzeUserSessions(userId, { planName, mrr, accountAge }),
+      // Task 2: Full session analysis (PostHog + rrweb + AI) — only if PostHog configured
+      hasPosthog
+        ? analyzeUserSessions(posthogCreds, userId, { planName, mrr, accountAge })
+        : Promise.resolve({ recordings: [] as any[], aiAnalysis: null, contextForAgent: '', timing: { personUuid_ms: 0, recordingsList_ms: 0, analyticsEvents_ms: 0, posthogParallel_ms: 0, elementExtraction_ms: 0, blobFetch_ms: 0, rrwebParse_ms: 0, enrichment_ms: 0, aiAnalysis_ms: 0, contextGen_ms: 0, total_ms: 0 } }),
     ]);
 
     const { recordings, aiAnalysis, contextForAgent, timing } = analysisResult;
@@ -169,7 +187,7 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
           tenantId: req.tenant?.id !== 'default' ? req.tenant?.id : null,
           userId,
           status: 'initiated',
-          agentId: config.elevenLabsAgentId,
+          agentId: agentId || null,
           context: fullContext,
           dynamicVariables,
           aiAnalysis,
@@ -182,7 +200,7 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
 
     res.json({
       sessionId,
-      agentId: config.elevenLabsAgentId,
+      agentId: agentId || null,
       signedUrl: signedUrlResult,
       context: fullContext,
       dynamicVariables,
@@ -233,24 +251,30 @@ app.post('/api/exit-session/complete', authenticate, completeRateLimit, async (r
       }
     }
 
-    // Send event to PostHog
-    try {
-      await fetch(`${config.posthogHost}/capture/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: config.posthogApiKey,
-          event: outcome === 'retained' ? 'user_retained' : 'user_churned',
-          distinct_id: userId,
-          properties: {
-            session_id: sessionId,
-            accepted_offer: acceptedOffer,
-            transcript_length: transcript?.length || 0,
-          },
-        }),
-      });
-    } catch (e) {
-      logger.warn({ err: e }, 'Failed to send event to PostHog (non-fatal)');
+    // Send event to PostHog using tenant's credentials
+    const tenantConfig = req.tenant?.config;
+    const phApiKey = tenantConfig?.posthogApiKey;
+    const phHost = tenantConfig?.posthogHost || 'https://app.posthog.com';
+
+    if (phApiKey) {
+      try {
+        await fetch(`${phHost}/capture/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: phApiKey,
+            event: outcome === 'retained' ? 'user_retained' : 'user_churned',
+            distinct_id: userId,
+            properties: {
+              session_id: sessionId,
+              accepted_offer: acceptedOffer,
+              transcript_length: transcript?.length || 0,
+            },
+          }),
+        });
+      } catch (e) {
+        logger.warn({ err: e }, 'Failed to send event to PostHog (non-fatal)');
+      }
     }
 
     res.json({

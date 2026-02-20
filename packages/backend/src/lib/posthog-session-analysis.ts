@@ -5,8 +5,16 @@
  */
 
 import { parseRRWebSession, SemanticSession } from './rrweb-parser';
-import { config } from '../config';
 import { logger } from './logger';
+
+/**
+ * Per-tenant PostHog credentials passed in from the route handler.
+ */
+export interface PostHogCredentials {
+  apiKey: string;
+  projectId: string;
+  host: string;
+}
 
 interface PostHogRecording {
   id: string;
@@ -240,12 +248,13 @@ function parseElementsArray(elements: any[]): ParsedElement[] {
  * Fetch PostHog analytics events for a user (these contain elements_chain)
  */
 async function fetchPostHogAnalyticsEvents(
+  creds: PostHogCredentials,
   distinctId: string,
   sessionId?: string,
   limit: number = 200
 ): Promise<any[]> {
   try {
-    let url = `${config.posthogHost}/api/projects/${config.posthogProjectId}/events?distinct_id=${encodeURIComponent(distinctId)}&limit=${limit}`;
+    let url = `${creds.host}/api/projects/${creds.projectId}/events?distinct_id=${encodeURIComponent(distinctId)}&limit=${limit}`;
 
     // If we have a session ID, filter to that session's time range
     if (sessionId) {
@@ -256,7 +265,7 @@ async function fetchPostHogAnalyticsEvents(
 
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${config.posthogApiKey}`,
+        'Authorization': `Bearer ${creds.apiKey}`,
       },
     });
 
@@ -355,14 +364,14 @@ function buildElementsChainContext(interactions: ParsedInteraction[]): string {
 /**
  * Fetch person UUID by distinct_id
  */
-async function fetchPersonUuid(distinctId: string): Promise<{ uuid: string | null; elapsed_ms: number }> {
+async function fetchPersonUuid(creds: PostHogCredentials, distinctId: string): Promise<{ uuid: string | null; elapsed_ms: number }> {
   const t = Date.now();
   try {
-    const url = `${config.posthogHost}/api/projects/${config.posthogProjectId}/persons?distinct_id=${encodeURIComponent(distinctId)}`;
+    const url = `${creds.host}/api/projects/${creds.projectId}/persons?distinct_id=${encodeURIComponent(distinctId)}`;
 
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${config.posthogApiKey}`,
+        'Authorization': `Bearer ${creds.apiKey}`,
       },
     });
 
@@ -383,10 +392,10 @@ async function fetchPersonUuid(distinctId: string): Promise<{ uuid: string | nul
 /**
  * Fetch recent session recordings for a user
  */
-export async function fetchUserRecordings(distinctId: string, limit: number = 5): Promise<{ recordings: PostHogRecording[]; timing: { personUuid_ms: number; recordingsList_ms: number } }> {
+export async function fetchUserRecordings(creds: PostHogCredentials, distinctId: string, limit: number = 5): Promise<{ recordings: PostHogRecording[]; timing: { personUuid_ms: number; recordingsList_ms: number } }> {
   try {
     // First, get the person UUID
-    const { uuid: personUuid, elapsed_ms: personUuid_ms } = await fetchPersonUuid(distinctId);
+    const { uuid: personUuid, elapsed_ms: personUuid_ms } = await fetchPersonUuid(creds, distinctId);
 
     if (!personUuid) {
       logger.info({ distinctId }, '[PostHog] No person found for distinct_id');
@@ -397,11 +406,11 @@ export async function fetchUserRecordings(distinctId: string, limit: number = 5)
 
     // Now fetch recordings using person_uuid
     const tRec = Date.now();
-    const url = `${config.posthogHost}/api/projects/${config.posthogProjectId}/session_recordings?person_uuid=${personUuid}&limit=${limit}`;
+    const url = `${creds.host}/api/projects/${creds.projectId}/session_recordings?person_uuid=${personUuid}&limit=${limit}`;
 
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${config.posthogApiKey}`,
+        'Authorization': `Bearer ${creds.apiKey}`,
       },
     });
 
@@ -423,17 +432,17 @@ export async function fetchUserRecordings(distinctId: string, limit: number = 5)
  * Fetch the events/snapshots for a specific recording
  * PostHog v2 API requires: 1) Get sources to find blob keys, 2) Fetch with blob_key parameter
  */
-export async function fetchRecordingEvents(recordingId: string): Promise<any[]> {
+export async function fetchRecordingEvents(creds: PostHogCredentials, recordingId: string): Promise<any[]> {
   try {
     // Step 1: Get the sources list to find blob keys
-    const sourcesUrl = `${config.posthogHost}/api/projects/${config.posthogProjectId}/session_recordings/${recordingId}/snapshots`;
+    const sourcesUrl = `${creds.host}/api/projects/${creds.projectId}/session_recordings/${recordingId}/snapshots`;
 
     logger.info({ recordingId }, '[PostHog] Fetching sources for recording');
 
     const sourcesResponse = await fetch(sourcesUrl, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.posthogApiKey}`,
+        'Authorization': `Bearer ${creds.apiKey}`,
       },
     });
 
@@ -463,13 +472,13 @@ export async function fetchRecordingEvents(recordingId: string): Promise<any[]> 
       const blobResults = await Promise.all(
         blobsToFetch.map(async (source: any) => {
           const blobKey = source.blob_key;
-          const blobUrl = `${config.posthogHost}/api/projects/${config.posthogProjectId}/session_recordings/${recordingId}/snapshots?source=${source.source}&blob_key=${blobKey}&start_blob_key=${blobKey}&end_blob_key=${blobKey}`;
+          const blobUrl = `${creds.host}/api/projects/${creds.projectId}/session_recordings/${recordingId}/snapshots?source=${source.source}&blob_key=${blobKey}&start_blob_key=${blobKey}&end_blob_key=${blobKey}`;
 
           try {
             const blobResponse = await fetch(blobUrl, {
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.posthogApiKey}`,
+                'Authorization': `Bearer ${creds.apiKey}`,
               },
             });
 
@@ -562,6 +571,7 @@ export interface PipelineTiming {
 }
 
 export async function analyzeUserSessions(
+  posthogCreds: PostHogCredentials,
   distinctId: string,
   userContext?: {
     planName?: string;
@@ -596,8 +606,8 @@ export async function analyzeUserSessions(
   const tParallel = Date.now();
   const tAnalytics = Date.now();
   const [recordingsResult, analyticsEvents] = await Promise.all([
-    fetchUserRecordings(distinctId, 5),
-    fetchPostHogAnalyticsEvents(distinctId).then(events => {
+    fetchUserRecordings(posthogCreds, distinctId, 5),
+    fetchPostHogAnalyticsEvents(posthogCreds, distinctId).then(events => {
       timing.analyticsEvents_ms = Date.now() - tAnalytics;
       return events;
     }),
@@ -641,7 +651,7 @@ export async function analyzeUserSessions(
     try {
       const tBlob = Date.now();
       logger.info({ recordingId: recording.id }, '[Session Analysis] Fetching events for recording');
-      const events = await fetchRecordingEvents(recording.id);
+      const events = await fetchRecordingEvents(posthogCreds, recording.id);
       timing.blobFetch_ms = Date.now() - tBlob;
       logger.info({ blobFetch_ms: timing.blobFetch_ms, events: events.length }, '[Timing] Blob fetch');
 

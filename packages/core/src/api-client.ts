@@ -35,7 +35,7 @@ export class ExitButtonApiClient {
    * Initiate a new cancellation session
    */
   async initiate(params: {
-    userId: string;
+    userId?: string;
     planName?: string;
     mrr?: number;
     accountAge?: string;

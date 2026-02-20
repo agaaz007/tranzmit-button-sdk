@@ -5,7 +5,7 @@
 import { z } from 'zod';
 
 export const InitiateRequestSchema = z.object({
-  userId: z.string().min(1, 'userId is required'),
+  userId: z.string().optional(),
   planName: z.string().optional(),
   mrr: z.number().nonnegative().optional(),
   accountAge: z.string().optional(),
