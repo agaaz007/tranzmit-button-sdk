@@ -18,7 +18,7 @@ import { globalRateLimit, initiateRateLimit, completeRateLimit } from './middlew
 import { db, sessions, pool } from './db';
 import { eq } from 'drizzle-orm';
 
-const app = express();
+const app: express.Express = express();
 
 // Request logging
 app.use(pinoHttp({ logger, autoLogging: { ignore: (req: any) => req.url === '/api/health' } }));
@@ -294,7 +294,7 @@ app.post('/api/exit-session/complete', authenticate, completeRateLimit, async (r
  * Get session details from database
  */
 app.get('/api/exit-session/:sessionId', authenticate, async (req, res) => {
-  const { sessionId } = req.params;
+  const sessionId = req.params.sessionId as string;
 
   if (!db) {
     return res.status(503).json({ error: 'Database not configured', sessionId });
