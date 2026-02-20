@@ -644,42 +644,62 @@ export async function analyzeUserSessions(
     };
   }
 
-  // Try to analyze the most recent recording
+  // Fetch and analyze ALL recordings in parallel (up to 5)
   let analysis: SemanticSession | null = null;
 
-  for (const recording of recordings.slice(0, 1)) {
-    try {
-      const tBlob = Date.now();
-      logger.info({ recordingId: recording.id }, '[Session Analysis] Fetching events for recording');
-      const events = await fetchRecordingEvents(posthogCreds, recording.id);
-      timing.blobFetch_ms = Date.now() - tBlob;
-      logger.info({ blobFetch_ms: timing.blobFetch_ms, events: events.length }, '[Timing] Blob fetch');
+  if (recordings.length > 0) {
+    const tBlob = Date.now();
+    logger.info({ count: recordings.length }, '[Session Analysis] Fetching all recordings in parallel');
 
-      if (events.length > 0) {
-        const tParse = Date.now();
-
-        // Debug: Log event type distribution
-        const typeCounts: Record<string, number> = {};
-        const sourceCounts: Record<number, number> = {};
-
-        for (const event of events) {
-          const typeKey = event.type !== undefined ? String(event.type) : 'undefined';
-          typeCounts[typeKey] = (typeCounts[typeKey] || 0) + 1;
-
-          if (event.type === 3 && event.data?.source !== undefined) {
-            sourceCounts[event.data.source] = (sourceCounts[event.data.source] || 0) + 1;
+    const sessionResults = await Promise.all(
+      recordings.map(async (recording) => {
+        try {
+          const events = await fetchRecordingEvents(posthogCreds, recording.id);
+          if (events.length > 0) {
+            return parseRRWebSession(events);
           }
+        } catch (error) {
+          logger.error({ err: error, recordingId: recording.id }, '[Session Analysis] Failed to analyze recording');
         }
-        logger.info({ typeCounts }, '[Session Analysis] Event types');
+        return null;
+      })
+    );
 
-        analysis = parseRRWebSession(events);
-        timing.rrwebParse_ms = Date.now() - tParse;
-        logger.info({ rrwebParse_ms: timing.rrwebParse_ms }, '[Timing] rrweb parse');
-        break;
+    timing.blobFetch_ms = Date.now() - tBlob;
+    const tParse = Date.now();
+
+    // Merge all successful analyses into one combined session
+    const validSessions = sessionResults.filter((s): s is SemanticSession => s !== null);
+    logger.info({ analyzed: validSessions.length, total: recordings.length }, '[Session Analysis] Recordings analyzed');
+
+    if (validSessions.length === 1) {
+      analysis = validSessions[0]!;
+    } else if (validSessions.length > 1) {
+      // Merge: combine summaries, concatenate logs, merge behavioral signals
+      const merged = validSessions[0]!;
+      for (let i = 1; i < validSessions.length; i++) {
+        const s = validSessions[i]!;
+        // Sum all numeric summary fields
+        for (const key of Object.keys(merged.summary) as (keyof typeof merged.summary)[]) {
+          (merged.summary as any)[key] += (s.summary as any)[key];
+        }
+        // Merge behavioral signals (OR — if any session shows a signal, keep it)
+        merged.behavioralSignals.isExploring = merged.behavioralSignals.isExploring || s.behavioralSignals.isExploring;
+        merged.behavioralSignals.isFrustrated = merged.behavioralSignals.isFrustrated || s.behavioralSignals.isFrustrated;
+        merged.behavioralSignals.isEngaged = merged.behavioralSignals.isEngaged || s.behavioralSignals.isEngaged;
+        merged.behavioralSignals.isConfused = merged.behavioralSignals.isConfused || s.behavioralSignals.isConfused;
+        merged.behavioralSignals.isMobile = merged.behavioralSignals.isMobile || s.behavioralSignals.isMobile;
+        merged.behavioralSignals.completedGoal = merged.behavioralSignals.completedGoal || s.behavioralSignals.completedGoal;
+        // Append logs (capped at 200 to keep AI context manageable)
+        merged.logs.push(...s.logs);
       }
-    } catch (error) {
-      logger.error({ err: error, recordingId: recording.id }, '[Session Analysis] Failed to analyze recording');
+      merged.logs = merged.logs.slice(0, 200);
+      merged.eventCount = validSessions.reduce((sum, s) => sum + s.eventCount, 0);
+      analysis = merged;
     }
+
+    timing.rrwebParse_ms = Date.now() - tParse;
+    logger.info({ blobFetch_ms: timing.blobFetch_ms, rrwebParse_ms: timing.rrwebParse_ms }, '[Timing] Parallel fetch + parse');
   }
 
   // Enrich the session analysis with elements_chain data
