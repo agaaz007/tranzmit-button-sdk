@@ -220,6 +220,11 @@ export interface CompleteResponse {
   outcome: string;
 }
 
+export interface PrefetchResponse {
+  /** Whether the prefetch was started, already cached, or in progress */
+  status: 'started' | 'cached' | 'in_progress';
+}
+
 // ============ Modal State Types ============
 
 export type ModalState =

@@ -12,9 +12,10 @@ import pinoHttp from 'pino-http';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { analyzeUserSessions, PostHogCredentials } from './lib/posthog-session-analysis';
-import { InitiateRequestSchema, CompleteRequestSchema } from './lib/validation';
+import { InitiateRequestSchema, CompleteRequestSchema, PrefetchRequestSchema } from './lib/validation';
 import { authenticate } from './middleware/auth';
-import { globalRateLimit, initiateRateLimit, completeRateLimit } from './middleware/rate-limit';
+import { globalRateLimit, initiateRateLimit, completeRateLimit, prefetchRateLimit } from './middleware/rate-limit';
+import { prefetchKey, prefetchGet, prefetchSetPending } from './lib/prefetch-cache';
 import { db, sessions, pool } from './db';
 import { eq } from 'drizzle-orm';
 
@@ -82,6 +83,60 @@ app.get('/embed.js', (_req, res) => {
 // ============ API Endpoints ============
 
 /**
+ * POST /api/exit-session/prefetch
+ *
+ * Kicks off PostHog session analysis ahead of time so /initiate is fast.
+ * No DB session is created, no signed URL is fetched.
+ */
+app.post('/api/exit-session/prefetch', authenticate, prefetchRateLimit, async (req, res) => {
+  try {
+    const parsed = PrefetchRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`);
+      return res.status(400).json({ error: 'Validation failed', details: errors });
+    }
+
+    const { userId, planName, mrr, accountAge } = parsed.data;
+    const tenantId = req.tenant?.id || 'default';
+    const key = prefetchKey(tenantId, userId);
+
+    // Check if we already have a result or in-flight request
+    const existing = prefetchGet(key);
+    if (existing.hit) {
+      if (existing.data) {
+        return res.json({ status: 'cached' });
+      }
+      if (existing.pending) {
+        return res.json({ status: 'in_progress' });
+      }
+    }
+
+    // Build PostHog credentials from tenant config
+    const tenantConfig = req.tenant!.config;
+    const posthogCreds: PostHogCredentials = {
+      apiKey: tenantConfig.posthogApiKey || '',
+      projectId: tenantConfig.posthogProjectId || '',
+      host: tenantConfig.posthogHost,
+    };
+    const hasPosthog = !!(posthogCreds.apiKey && posthogCreds.projectId);
+
+    if (!hasPosthog) {
+      return res.json({ status: 'cached' }); // nothing to prefetch
+    }
+
+    // Start analysis and cache the promise
+    const promise = analyzeUserSessions(posthogCreds, userId, { planName, mrr, accountAge });
+    prefetchSetPending(key, promise);
+
+    logger.info({ tenantId, userId }, 'Prefetch started');
+    res.json({ status: 'started' });
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to start prefetch');
+    res.status(500).json({ error: 'Failed to start prefetch' });
+  }
+});
+
+/**
  * POST /api/exit-session/initiate
  *
  * Runs PostHog analysis + AI + signed URL all in parallel where possible.
@@ -114,6 +169,12 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
     };
     const hasPosthog = !!(posthogCreds.apiKey && posthogCreds.projectId);
 
+    // Check prefetch cache before running PostHog analysis
+    const tenantId = req.tenant?.id || 'default';
+    const cacheKey = prefetchKey(tenantId, userId);
+    const cached = prefetchGet(cacheKey);
+    let prefetchCacheHit = false;
+
     // Run signed URL fetch AND session analysis IN PARALLEL
     const tSignedUrl = Date.now();
     let signedUrl_ms = 0;
@@ -130,10 +191,26 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
             })
         : Promise.resolve(null).then(() => { signedUrl_ms = 0; return null; }),
 
-      // Task 2: Full session analysis (PostHog + rrweb + AI) — only if PostHog configured
-      hasPosthog
-        ? analyzeUserSessions(posthogCreds, userId, { planName, mrr, accountAge })
-        : Promise.resolve({ recordings: [] as any[], aiAnalysis: null, contextForAgent: '', timing: { personUuid_ms: 0, recordingsList_ms: 0, analyticsEvents_ms: 0, posthogParallel_ms: 0, elementExtraction_ms: 0, blobFetch_ms: 0, rrwebParse_ms: 0, enrichment_ms: 0, aiAnalysis_ms: 0, contextGen_ms: 0, total_ms: 0 } }),
+      // Task 2: Full session analysis — try prefetch cache first
+      ((): Promise<any> => {
+        // Cache hit with completed data
+        if (cached.hit && cached.data) {
+          prefetchCacheHit = true;
+          logger.info({ userId }, 'Prefetch cache hit');
+          return Promise.resolve(cached.data);
+        }
+        // In-flight prefetch — await the same promise
+        if (cached.hit && cached.pending) {
+          prefetchCacheHit = true;
+          logger.info({ userId }, 'Awaiting in-flight prefetch');
+          return cached.pending;
+        }
+        // Cache miss — run analysis normally
+        if (!hasPosthog) {
+          return Promise.resolve({ recordings: [] as any[], aiAnalysis: null, contextForAgent: '', timing: { personUuid_ms: 0, recordingsList_ms: 0, analyticsEvents_ms: 0, posthogParallel_ms: 0, elementExtraction_ms: 0, blobFetch_ms: 0, rrwebParse_ms: 0, enrichment_ms: 0, aiAnalysis_ms: 0, contextGen_ms: 0, total_ms: 0 } });
+        }
+        return analyzeUserSessions(posthogCreds, userId, { planName, mrr, accountAge });
+      })(),
     ]);
 
     const { recordings, aiAnalysis, contextForAgent, timing } = analysisResult;
@@ -208,6 +285,7 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
       timing: {
         ...timing,
         signedUrl_ms,
+        prefetchCacheHit,
         total_ms: elapsed,
       },
     });

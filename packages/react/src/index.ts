@@ -20,6 +20,9 @@ export type { UseTranscriptReturn } from './hooks/useTranscript';
 export { useOffers } from './hooks/useOffers';
 export type { UseOffersReturn } from './hooks/useOffers';
 
+export { usePrefetch } from './hooks/usePrefetch';
+export type { UsePrefetchOptions, UsePrefetchReturn } from './hooks/usePrefetch';
+
 // Components
 export { CancelModal } from './components/CancelModal';
 export type { CancelModalProps } from './components/CancelModal';
@@ -42,6 +45,7 @@ export type {
   Intelligence,
   ModalState,
   VoiceState,
+  PrefetchResponse,
   ExitButtonError,
   ErrorCode,
 } from '@tranzmit/exit-button-core';

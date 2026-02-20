@@ -42,6 +42,18 @@ export const completeRateLimit = rateLimit({
 });
 
 /**
+ * Rate limiter for the `/exit-session/prefetch` endpoint.
+ * 50 requests per minute, keyed by client IP.
+ */
+export const prefetchRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  limit: 50,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: RATE_LIMIT_MESSAGE,
+});
+
+/**
  * Global rate limiter applied to all routes.
  * 1000 requests per minute total, keyed by client IP.
  */

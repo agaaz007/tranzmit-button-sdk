@@ -30,6 +30,8 @@ import { injectStyles, removeStyles } from './styles';
 export interface ExitButtonInstance {
   /** Start the cancellation flow */
   start: () => Promise<void>;
+  /** Prefetch PostHog analysis ahead of time (fire-and-forget) */
+  prefetch: () => void;
   /** Close the modal */
   close: () => void;
   /** Destroy the instance and cleanup */
@@ -154,6 +156,9 @@ class ExitButton implements ExitButtonInstance {
   private transcript: TranscriptEntry[] = [];
   private attachedElement: HTMLElement | null = null;
   private boundClickHandler: ((e: Event) => void) | null = null;
+  private boundHoverHandler: (() => void) | null = null;
+  private prefetchPromise: Promise<unknown> | null = null;
+  private prefetchDone: boolean = false;
   private mockMode: boolean;
   private useElevenLabsAgent: boolean;
 
@@ -251,6 +256,29 @@ class ExitButton implements ExitButtonInstance {
     } catch (error) {
       this.handleError(error as ExitButtonError);
     }
+  }
+
+  /**
+   * Prefetch PostHog session analysis so /initiate is fast.
+   * Fire-and-forget, deduped — safe to call multiple times.
+   */
+  prefetch(): void {
+    if (this.prefetchDone || this.prefetchPromise) return;
+    this.prefetchDone = true;
+
+    const userId = this.config.posthogDistinctId || this.config.userId;
+    if (!userId) return; // need a userId for the cache key
+
+    this.prefetchPromise = this.apiClient
+      .prefetch({
+        userId,
+        planName: this.config.planName,
+        mrr: this.config.mrr,
+        accountAge: this.config.accountAge,
+      })
+      .catch(() => {
+        // fire-and-forget — don't surface prefetch errors
+      });
   }
 
   /**
@@ -775,6 +803,8 @@ class ExitButton implements ExitButtonInstance {
     this.currentState = 'closed';
     this.offers = [];
     this.transcript = [];
+    this.prefetchPromise = null;
+    this.prefetchDone = false;
   }
 
   private attachToElement(selector: string): void {
@@ -791,14 +821,23 @@ class ExitButton implements ExitButtonInstance {
       this.start();
     };
 
+    // Auto-prefetch on hover (free fallback)
+    this.boundHoverHandler = () => this.prefetch();
     element.addEventListener('click', this.boundClickHandler);
+    element.addEventListener('mouseenter', this.boundHoverHandler, { once: true });
   }
 
   private detachFromElement(): void {
-    if (this.attachedElement && this.boundClickHandler) {
-      this.attachedElement.removeEventListener('click', this.boundClickHandler);
+    if (this.attachedElement) {
+      if (this.boundClickHandler) {
+        this.attachedElement.removeEventListener('click', this.boundClickHandler);
+      }
+      if (this.boundHoverHandler) {
+        this.attachedElement.removeEventListener('mouseenter', this.boundHoverHandler);
+      }
       this.attachedElement = null;
       this.boundClickHandler = null;
+      this.boundHoverHandler = null;
     }
   }
 
@@ -877,6 +916,17 @@ export function close(): void {
 export function destroy(): void {
   instance?.destroy();
   instance = null;
+}
+
+/**
+ * Prefetch PostHog analysis ahead of time (fire-and-forget)
+ */
+export function prefetch(): void {
+  if (!instance) {
+    console.warn('ExitButton: Not initialized. Call init() first.');
+    return;
+  }
+  instance.prefetch();
 }
 
 /**

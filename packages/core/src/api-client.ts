@@ -6,6 +6,7 @@
 import {
   InitiateResponse,
   CompleteResponse,
+  PrefetchResponse,
   ExitButtonError,
 } from './types';
 
@@ -62,6 +63,22 @@ export class ExitButtonApiClient {
         sessionId,
         ...params,
       }),
+    });
+  }
+
+  /**
+   * Prefetch PostHog session analysis so /initiate is fast.
+   * Fire-and-forget — the backend caches the result for later use.
+   */
+  async prefetch(params: {
+    userId: string;
+    planName?: string;
+    mrr?: number;
+    accountAge?: string;
+  }): Promise<PrefetchResponse> {
+    return this.request<PrefetchResponse>('/api/exit-session/prefetch', {
+      method: 'POST',
+      body: JSON.stringify(params),
     });
   }
 
