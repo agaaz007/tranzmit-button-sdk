@@ -220,8 +220,14 @@ class ExitButton implements ExitButtonInstance {
       return;
     }
 
+    // Use ElevenLabs Conversational AI agent (production path)
+    if (this.useElevenLabsAgent) {
+      await this.startElevenLabsAgentFlow();
+      return;
+    }
+
+    // Legacy WebSocket voice path (fallback)
     try {
-      // Initiate session
       const response = await this.apiClient.initiate({
         userId: this.config.userId,
         planName: this.config.planName,
@@ -232,13 +238,11 @@ class ExitButton implements ExitButtonInstance {
 
       this.sessionId = response.sessionId;
 
-      // Check microphone availability
       const hasMic = await VoiceHandler.isMicrophoneAvailable();
 
       if (hasMic) {
         this.setState('permission');
       } else {
-        // Skip to text-only interview
         this.setupVoiceHandler(response.sessionId);
         this.modal?.enableFallback();
         this.setState('interview');
