@@ -1,276 +1,296 @@
-# Exit Button WebSDK
+# Tranzmit Exit Interview SDK
 
-AI-native cancel button that intercepts subscription cancellations, conducts real-time voice exit-interviews, and generates personalized win-back offers.
-
-## Features
-
-- **Voice Interviews**: AI-powered conversational exit interviews
-- **Win-back Offers**: Personalized retention offers based on conversation
-- **Friction Detection**: Automatic detection of user frustration signals
-- **Engineering Insights**: Aggregated bug reports from churn feedback
-- **Easy Integration**: Single script tag or React components
+Drop-in SDK that intercepts your cancel button, opens an AI exit interview modal, and handles everything.
 
 ## Quick Start
 
-### Option 1: Script Tag (Any Website)
-
-Add this script tag before your cancel button:
+### 1. You have a cancel button somewhere on your site
 
 ```html
-<script
-  src="https://api.tranzmitai.com/embed.js"
-  data-api-key="eb_live_your_api_key"
-  data-user-id="user_123"
-  data-plan-name="Pro"
-  data-mrr="49"
-  data-attach="#cancel-btn"
-></script>
-
 <button id="cancel-btn">Cancel Subscription</button>
 ```
 
-The SDK automatically attaches to the element specified in `data-attach` and shows the Exit Button modal when clicked.
+### 2. Add one script tag
 
-### Option 2: React SDK
-
-Install the package:
-
-```bash
-npm install @tranzmit/exit-button-react
-# or
-pnpm add @tranzmit/exit-button-react
+```html
+<script
+  src="https://tranzmit-button-sdk-react-app.vercel.app/embed.js"
+  data-api-key="YOUR_API_KEY"
+  data-attach="#cancel-btn"
+  data-backend-url="https://tranzmit-button-sdk-react-app.vercel.app"
+></script>
 ```
 
-Use in your app:
+Done. The SDK finds your button, intercepts the click, and opens the exit interview modal.
 
-```tsx
-import { ExitButtonProvider, useCancelFlow, CancelModal } from '@tranzmit/exit-button-react';
+---
 
-function App() {
-  return (
-    <ExitButtonProvider apiKey="eb_live_your_api_key">
-      <SettingsPage />
-    </ExitButtonProvider>
-  );
-}
+## Configuration
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `data-api-key` | Yes | Your Tranzmit API key |
+| `data-attach` | Yes | CSS selector of your existing cancel button |
+| `data-backend-url` | Yes | Set to `https://tranzmit-button-sdk-react-app.vercel.app` |
+
+### Selector Examples
+
+| Your button HTML | `data-attach` value |
+|---|---|
+| `<button id="cancel-btn">` | `#cancel-btn` |
+| `<button class="cancel-subscription">` | `.cancel-subscription` |
+| `<a href="/cancel">` | `a[href="/cancel"]` |
+| `<button data-action="cancel">` | `[data-action="cancel"]` |
+
+---
+
+## Framework Guides
+
+### HTML / Static Sites
+
+Add the script tag before `</body>`:
+
+```html
+<!DOCTYPE html>
+<html>
+<body>
+  <button id="cancel-btn">Cancel Subscription</button>
+
+  <script
+    src="https://tranzmit-button-sdk-react-app.vercel.app/embed.js"
+    data-api-key="YOUR_API_KEY"
+    data-attach="#cancel-btn"
+    data-backend-url="https://tranzmit-button-sdk-react-app.vercel.app"
+  ></script>
+</body>
+</html>
+```
+
+---
+
+### React
+
+Use `useEffect` to load the script after your component mounts:
+
+```jsx
+import { useEffect } from 'react';
 
 function SettingsPage() {
-  const {
-    start,
-    close,
-    isOpen,
-    status,
-    offers,
-    transcript,
-    acceptOffer,
-    decline,
-  } = useCancelFlow({
-    userId: 'user_123',
-    planName: 'Pro',
-    mrr: 49,
-    onComplete: (session) => {
-      console.log('Session completed:', session);
-    },
-  });
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://tranzmit-button-sdk-react-app.vercel.app/embed.js';
+    script.setAttribute('data-api-key', 'YOUR_API_KEY');
+    script.setAttribute('data-attach', '#cancel-btn');
+    script.setAttribute('data-backend-url', 'https://tranzmit-button-sdk-react-app.vercel.app');
+    document.body.appendChild(script);
+    return () => document.body.removeChild(script);
+  }, []);
 
+  return <button id="cancel-btn">Cancel Subscription</button>;
+}
+```
+
+---
+
+### Next.js
+
+Use the `next/script` component with `lazyOnload` strategy:
+
+```jsx
+import Script from 'next/script';
+
+export default function SettingsPage() {
   return (
     <>
-      <button onClick={start}>Cancel Subscription</button>
+      <button id="cancel-btn">Cancel Subscription</button>
 
-      <CancelModal
-        isOpen={isOpen}
-        status={status}
-        offers={offers}
-        transcript={transcript}
-        onClose={close}
-        onAcceptOffer={() => acceptOffer(selectedIndex)}
-        onProceedCancel={decline}
+      <Script
+        src="https://tranzmit-button-sdk-react-app.vercel.app/embed.js"
+        data-api-key="YOUR_API_KEY"
+        data-attach="#cancel-btn"
+        data-backend-url="https://tranzmit-button-sdk-react-app.vercel.app"
+        strategy="lazyOnload"
       />
     </>
   );
 }
 ```
 
-## Installation
+---
 
-### Using pnpm (Recommended)
+### Vue
 
-```bash
-# Install from npm
-pnpm add @tranzmit/exit-button-embed
-# or for React
-pnpm add @tranzmit/exit-button-react
-```
+Load the script in `onMounted`:
 
-### Using npm
+```vue
+<template>
+  <button id="cancel-btn">Cancel Subscription</button>
+</template>
 
-```bash
-npm install @tranzmit/exit-button-embed
-# or for React
-npm install @tranzmit/exit-button-react
-```
+<script setup>
+import { onMounted, onUnmounted } from 'vue';
 
-## Configuration Options
+let script;
 
-### Script Tag Attributes
-
-| Attribute | Required | Description |
-|-----------|----------|-------------|
-| `data-api-key` | Yes | Your Exit Button API key |
-| `data-user-id` | Yes | Unique identifier for the user |
-| `data-plan-name` | No | User's current plan name |
-| `data-mrr` | No | Monthly recurring revenue |
-| `data-account-age` | No | How long user has been a customer |
-| `data-attach` | No | CSS selector for cancel button |
-
-### Programmatic API
-
-```javascript
-// Initialize manually
-ExitButton.init({
-  apiKey: 'eb_live_xxxx',
-  userId: 'user_123',
-  planName: 'Pro',
-  mrr: 49,
-  onOffer: (offers) => console.log('Offers:', offers),
-  onComplete: (session) => console.log('Session:', session),
-  onError: (error) => console.error('Error:', error),
+onMounted(() => {
+  script = document.createElement('script');
+  script.src = 'https://tranzmit-button-sdk-react-app.vercel.app/embed.js';
+  script.setAttribute('data-api-key', 'YOUR_API_KEY');
+  script.setAttribute('data-attach', '#cancel-btn');
+  script.setAttribute('data-backend-url', 'https://tranzmit-button-sdk-react-app.vercel.app');
+  document.body.appendChild(script);
 });
 
-// Start the flow
-ExitButton.start();
-
-// Close the modal
-ExitButton.close();
-
-// Cleanup
-ExitButton.destroy();
+onUnmounted(() => {
+  if (script) document.body.removeChild(script);
+});
+</script>
 ```
 
-## Theming
+---
 
-Customize the appearance using CSS variables:
+### Nuxt
 
-```css
-:root {
-  --exit-button-primary: #6366f1;
-  --exit-button-primary-hover: #4f46e5;
-  --exit-button-background: #ffffff;
-  --exit-button-surface: #f9fafb;
-  --exit-button-text: #111827;
-  --exit-button-text-secondary: #6b7280;
-  --exit-button-error: #ef4444;
-  --exit-button-success: #22c55e;
-  --exit-button-radius: 12px;
+Use the `useHead` composable:
+
+```vue
+<template>
+  <button id="cancel-btn">Cancel Subscription</button>
+</template>
+
+<script setup>
+useHead({
+  script: [
+    {
+      src: 'https://tranzmit-button-sdk-react-app.vercel.app/embed.js',
+      'data-api-key': 'YOUR_API_KEY',
+      'data-attach': '#cancel-btn',
+      'data-backend-url': 'https://tranzmit-button-sdk-react-app.vercel.app',
+      defer: true,
+    },
+  ],
+});
+</script>
+```
+
+---
+
+### Angular
+
+Load the script in `ngAfterViewInit`:
+
+```typescript
+import { Component, AfterViewInit, OnDestroy } from '@angular/core';
+
+@Component({
+  template: `<button id="cancel-btn">Cancel Subscription</button>`,
+})
+export class SettingsComponent implements AfterViewInit, OnDestroy {
+  private script: HTMLScriptElement | null = null;
+
+  ngAfterViewInit() {
+    this.script = document.createElement('script');
+    this.script.src = 'https://tranzmit-button-sdk-react-app.vercel.app/embed.js';
+    this.script.setAttribute('data-api-key', 'YOUR_API_KEY');
+    this.script.setAttribute('data-attach', '#cancel-btn');
+    this.script.setAttribute('data-backend-url', 'https://tranzmit-button-sdk-react-app.vercel.app');
+    document.body.appendChild(this.script);
+  }
+
+  ngOnDestroy() {
+    if (this.script) document.body.removeChild(this.script);
+  }
 }
 ```
 
-Or pass a theme object:
+---
 
-```javascript
-ExitButton.init({
-  apiKey: 'eb_live_xxxx',
-  userId: 'user_123',
-  theme: {
-    primaryColor: '#0066cc',
-    borderRadius: '8px',
-  },
-});
+### Svelte
+
+Load the script in `onMount`:
+
+```svelte
+<script>
+  import { onMount, onDestroy } from 'svelte';
+
+  let script;
+
+  onMount(() => {
+    script = document.createElement('script');
+    script.src = 'https://tranzmit-button-sdk-react-app.vercel.app/embed.js';
+    script.setAttribute('data-api-key', 'YOUR_API_KEY');
+    script.setAttribute('data-attach', '#cancel-btn');
+    script.setAttribute('data-backend-url', 'https://tranzmit-button-sdk-react-app.vercel.app');
+    document.body.appendChild(script);
+  });
+
+  onDestroy(() => {
+    if (script) document.body.removeChild(script);
+  });
+</script>
+
+<button id="cancel-btn">Cancel Subscription</button>
 ```
 
-## React Hooks
+---
 
-### useCancelFlow
+### WordPress
 
-Main orchestration hook for the cancellation flow.
+Add to your theme's `footer.php` before `</body>`, or use a plugin like "Insert Headers and Footers":
 
-```tsx
-const {
-  start,        // Start the flow
-  close,        // Close the modal
-  isOpen,       // Modal visibility
-  status,       // Current state: 'connecting' | 'permission' | 'interview' | 'offers' | 'done' | 'error'
-  offers,       // Available win-back offers
-  transcript,   // Conversation transcript
-  session,      // Session data after completion
-  acceptOffer,  // Accept an offer by index
-  decline,      // Proceed with cancellation
-  error,        // Error if any
-  isLoading,    // Loading state
-} = useCancelFlow(options);
+```html
+<script
+  src="https://tranzmit-button-sdk-react-app.vercel.app/embed.js"
+  data-api-key="YOUR_API_KEY"
+  data-attach="#cancel-btn"
+  data-backend-url="https://tranzmit-button-sdk-react-app.vercel.app"
+></script>
 ```
 
-### useVoiceState
+Make sure `data-attach` matches the CSS selector of your theme's cancel button.
 
-Manage voice connection and audio state.
+---
 
-```tsx
-const {
-  isConnected,      // WebSocket connected
-  isSpeaking,       // User is speaking
-  isListening,      // AI is responding
-  volume,           // Audio volume level (0-1)
-  connect,          // Connect to voice session
-  disconnect,       // Disconnect
-  requestPermission,// Request mic access
-  sendText,         // Send text (fallback)
-  hasPermission,    // Mic permission granted
-} = useVoiceState({ url: voiceSessionUrl });
+### Shopify
+
+Add to your theme's `theme.liquid` before `</body>`:
+
+```html
+<script
+  src="https://tranzmit-button-sdk-react-app.vercel.app/embed.js"
+  data-api-key="YOUR_API_KEY"
+  data-attach=".cancel-subscription"
+  data-backend-url="https://tranzmit-button-sdk-react-app.vercel.app"
+></script>
 ```
 
-### useTranscript
+---
 
-Access conversation transcript.
+### Webflow
 
-```tsx
-const {
-  transcript,   // Array of { role, content, timestamp }
-  addEntry,     // Add new entry
-  clear,        // Clear transcript
-  lastEntry,    // Most recent entry
-  hasEntries,   // Has any entries
-} = useTranscript();
+Go to **Project Settings > Custom Code > Footer Code** and paste:
+
+```html
+<script
+  src="https://tranzmit-button-sdk-react-app.vercel.app/embed.js"
+  data-api-key="YOUR_API_KEY"
+  data-attach="#cancel-btn"
+  data-backend-url="https://tranzmit-button-sdk-react-app.vercel.app"
+></script>
 ```
 
-### useOffers
+Give your cancel button the matching ID or class in the Webflow designer.
 
-Manage win-back offers.
+---
 
-```tsx
-const {
-  offers,         // Available offers
-  selectedIndex,  // Currently selected
-  setOffers,      // Update offers
-  select,         // Select by index
-  clearSelection, // Clear selection
-  selectedOffer,  // Get selected offer
-  hasOffers,      // Has any offers
-} = useOffers();
-```
+## How It Works
 
-## Browser Support
+1. The SDK script loads on your page
+2. It finds the element matching your `data-attach` selector
+3. When clicked, it intercepts the default action and opens an AI-powered exit interview modal
+4. The modal handles the conversation and retention flow automatically
+5. No additional code needed on your end
 
-- Chrome 80+
-- Firefox 75+
-- Safari 14+
-- Edge 80+
+## Support
 
-## Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Watch mode
-pnpm dev
-
-# Type check
-pnpm typecheck
-```
-
-## License
-
-MIT
+Questions? Reach out to the Tranzmit team.
