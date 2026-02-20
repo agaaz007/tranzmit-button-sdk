@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tranzmit/exit-button-core": "file:../core"
+    "@tranzmit/exit-button-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

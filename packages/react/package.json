@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tranzmit/exit-button-core": "file:../core"
+    "@tranzmit/exit-button-core": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=17.0.0",
