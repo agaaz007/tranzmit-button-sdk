@@ -1,7 +1,7 @@
 {
   "version": 2,
   "installCommand": "pnpm install",
-  "buildCommand": "pnpm build:core && pnpm build:embed && pnpm build:react",
+  "buildCommand": "pnpm build",
   "functions": {
     "api/index.ts": {
       "includeFiles": "packages/embed/dist/**,packages/backend/src/**"
