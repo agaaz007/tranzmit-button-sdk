@@ -332,10 +332,13 @@ export class ElevenLabsAgentHandler {
         break;
 
       case 'agent_response':
-        if (data.agent_response_event?.agent_response) {
+        // Use accumulated streaming text if available, otherwise fall back to full response
+        const agentText = this.pendingAgentText || data.agent_response_event?.agent_response || '';
+        this.pendingAgentText = '';
+        if (agentText) {
           const entry: TranscriptEntry = {
             role: 'assistant',
-            content: data.agent_response_event.agent_response,
+            content: agentText,
             timestamp: new Date().toISOString(),
           };
           this.options.onTranscript?.(entry);
@@ -343,22 +346,9 @@ export class ElevenLabsAgentHandler {
         break;
 
       case 'agent_chat_response_part':
-        // Streaming text chunk in text-only mode — accumulate into pending response
-        if (data.text_response_part?.text_chunk) {
-          this.pendingAgentText += data.text_response_part.text_chunk;
-        }
-        break;
-
-      case 'agent_chat_response':
-        // Final text response in text-only mode — emit the full accumulated text
-        if (this.pendingAgentText) {
-          const entry: TranscriptEntry = {
-            role: 'assistant',
-            content: this.pendingAgentText,
-            timestamp: new Date().toISOString(),
-          };
-          this.options.onTranscript?.(entry);
-          this.pendingAgentText = '';
+        // Streaming text chunk — ignore start/stop, accumulate deltas
+        if (data.text_response_part?.type === 'delta' && data.text_response_part?.text) {
+          this.pendingAgentText += data.text_response_part.text;
         }
         break;
 
@@ -574,7 +564,7 @@ export class ElevenLabsAgentHandler {
     } else {
       const ws = (this as any).ws as WebSocket;
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'user_text_input', text }));
+        ws.send(JSON.stringify({ type: 'user_message', text }));
       }
     }
 
