@@ -118,17 +118,18 @@ export class ElevenLabsAgentHandler {
 
   /**
    * Start the conversation with the ElevenLabs agent
+   * @param textOnly - If true, connect WebSocket but skip microphone (text fallback)
    */
-  async connect(): Promise<void> {
+  async connect(textOnly = false): Promise<void> {
     console.log('[ElevenLabs] Starting connection to agent:', this.options.agentId);
 
     try {
       const sdkLoaded = await loadElevenLabsSDK();
 
-      if (!sdkLoaded || !Conversation) {
-        // Fall back to direct WebSocket connection
-        console.log('[ElevenLabs] SDK not available, using direct WebSocket');
-        await this.connectDirectWebSocket();
+      if (!sdkLoaded || !Conversation || textOnly) {
+        // Fall back to direct WebSocket connection (also used for text-only mode)
+        console.log('[ElevenLabs] Using direct WebSocket', textOnly ? '(text-only)' : '');
+        await this.connectDirectWebSocket(textOnly);
         return;
       }
 
@@ -243,7 +244,7 @@ export class ElevenLabsAgentHandler {
   /**
    * Direct WebSocket connection fallback
    */
-  private async connectDirectWebSocket(): Promise<void> {
+  private async connectDirectWebSocket(textOnly = false): Promise<void> {
     // Use signed URL if available (required for private agents)
     let wsUrl: string;
     if (this.options.signedUrl) {
@@ -280,8 +281,10 @@ export class ElevenLabsAgentHandler {
           ws.send(JSON.stringify(configMessage));
         }
 
-        // Start microphone
-        this.startMicrophone(ws);
+        // Start microphone (skip in text-only mode)
+        if (!textOnly) {
+          this.startMicrophone(ws);
+        }
         resolve();
       };
 

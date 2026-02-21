@@ -149,6 +149,13 @@ export class ModalManager {
   }
 
   /**
+   * Check if text fallback mode is enabled
+   */
+  isFallbackEnabled(): boolean {
+    return this.useFallback;
+  }
+
+  /**
    * Enable text fallback mode
    */
   enableFallback(): void {
@@ -472,7 +479,7 @@ export class ModalManager {
         break;
       case 'use-text':
         this.useFallback = true;
-        this.setState('interview');
+        this.options.onRequestPermission?.();
         break;
       case 'send-text':
         const input = this.container?.querySelector('[data-input="text"]') as HTMLInputElement;

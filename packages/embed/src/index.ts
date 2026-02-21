@@ -584,9 +584,13 @@ class ExitButton implements ExitButtonInstance {
   private async requestPermissionAndConnect(): Promise<void> {
     // If using ElevenLabs Agent, connect directly (SDK handles permissions)
     if (this.elevenLabsAgent) {
+      const textOnly = this.modal?.isFallbackEnabled() ?? false;
       try {
         this.setState('interview');
-        await this.elevenLabsAgent.connect();
+        if (textOnly) {
+          this.modal?.enableFallback();
+        }
+        await this.elevenLabsAgent.connect(textOnly);
       } catch (error) {
         // If connection fails (e.g., mic denied), fall back to text
         this.modal?.enableFallback();
