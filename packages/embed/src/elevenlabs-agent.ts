@@ -306,10 +306,10 @@ export class ElevenLabsAgentHandler {
         break;
 
       case 'audio':
-        // Mute audio in text-only mode
-        if (this.textOnly) break;
+        // Handle audio response (voice mode only)
         if (data.audio_event?.audio_base_64) {
           this.receivedAudio = true;
+          console.log('[ElevenLabs] Audio chunk received, length:', data.audio_event.audio_base_64.length);
           this.updateState({ isSpeaking: true });
           this.playBase64Audio(data.audio_event.audio_base_64);
         }
