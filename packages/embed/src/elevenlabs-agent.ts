@@ -80,6 +80,8 @@ export class ElevenLabsAgentHandler {
   };
   private offers: Offer[] = [];
   private pendingAgentText = '';
+  private textOnly = false;
+  private receivedAudio = false;
 
   constructor(options: ElevenLabsAgentOptions) {
     this.options = options;
@@ -102,6 +104,7 @@ export class ElevenLabsAgentHandler {
           this.playbackContext = new AudioContext({ sampleRate: 16000 });
           console.log('[ElevenLabs] Playback AudioContext created:', this.playbackContext.state);
         }
+        this.textOnly = textOnly;
         // Fall back to direct WebSocket connection (also used for text-only mode)
         console.log('[ElevenLabs] Using direct WebSocket', textOnly ? '(text-only)' : '');
         await this.connectDirectWebSocket(textOnly);
@@ -237,24 +240,29 @@ export class ElevenLabsAgentHandler {
         console.log('[ElevenLabs] WebSocket connected');
         this.updateState({ isConnected: true, isListening: true });
 
-        // Send dynamic variables to the agent
-        if (this.options.dynamicVariables || this.options.posthogContext) {
-          const dynamicVars = this.options.dynamicVariables || {};
+        // Send config + dynamic variables to the agent
+        const dynamicVars = this.options.dynamicVariables || {};
 
-          // If no dynamic variables but we have context, use it as session_insights
-          if (!this.options.dynamicVariables && this.options.posthogContext) {
-            dynamicVars.session_insights = this.options.posthogContext;
-          }
-
-          const configMessage = {
-            type: 'conversation_initiation_client_data',
-            dynamic_variables: dynamicVars,
-            custom_llm_extra_body: dynamicVars,
-          };
-
-          console.log('[ElevenLabs] Sending dynamic variables to agent:', Object.keys(dynamicVars));
-          ws.send(JSON.stringify(configMessage));
+        // If no dynamic variables but we have context, use it as session_insights
+        if (!this.options.dynamicVariables && this.options.posthogContext) {
+          dynamicVars.session_insights = this.options.posthogContext;
         }
+
+        const configMessage: any = {
+          type: 'conversation_initiation_client_data',
+          dynamic_variables: dynamicVars,
+          custom_llm_extra_body: dynamicVars,
+        };
+
+        // Only send textOnly override in text mode — voice mode uses the agent's default
+        if (textOnly) {
+          configMessage.conversation_config_override = {
+            conversation: { textOnly: true },
+          };
+        }
+
+        console.log('[ElevenLabs] Sending init config, textOnly:', textOnly, 'vars:', Object.keys(dynamicVars));
+        ws.send(JSON.stringify(configMessage));
 
         // Start microphone (skip in text-only mode)
         if (!textOnly) {
@@ -298,16 +306,19 @@ export class ElevenLabsAgentHandler {
         break;
 
       case 'audio':
-        // Handle audio response
+        // Handle audio response (voice mode only)
         if (data.audio_event?.audio_base_64) {
+          this.receivedAudio = true;
           console.log('[ElevenLabs] Audio chunk received, length:', data.audio_event.audio_base_64.length);
           this.updateState({ isSpeaking: true });
           this.playBase64Audio(data.audio_event.audio_base_64);
         }
         break;
 
-      case 'agent_response':
-        // Use accumulated streaming text if available, otherwise fall back to full response
+      case 'agent_response': {
+        // In voice mode with audio: agent_response is the text version of what's
+        // already being spoken — add to transcript but don't duplicate if audio handled it.
+        // In text-only mode: this is the only response, always show it.
         const agentText = this.pendingAgentText || data.agent_response_event?.agent_response || '';
         this.pendingAgentText = '';
         if (agentText) {
@@ -316,9 +327,11 @@ export class ElevenLabsAgentHandler {
             content: agentText,
             timestamp: new Date().toISOString(),
           };
+          // Always add to transcript (text is shown alongside audio)
           this.options.onTranscript?.(entry);
         }
         break;
+      }
 
       case 'agent_chat_response_part':
         // Streaming text chunk — ignore start/stop, accumulate deltas
