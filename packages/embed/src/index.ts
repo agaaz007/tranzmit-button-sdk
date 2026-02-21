@@ -400,6 +400,8 @@ class ExitButton implements ExitButtonInstance {
     this.voiceAgentId = agentId;
     this.voiceSignedUrl = signedUrl || null;
 
+    console.log('[ExitButton] Voice agent:', this.voiceAgentId, '| Chat agent:', this.chatAgentIdResolved);
+
     // Don't create the agent yet — wait for user to pick voice or text
     this.setState('permission');
   }
@@ -415,7 +417,7 @@ class ExitButton implements ExitButtonInstance {
       ? (this.chatSignedUrl || this.voiceSignedUrl)
       : this.voiceSignedUrl;
 
-    console.log('[ExitButton] Creating agent for', textOnly ? 'text' : 'voice', 'mode, agentId:', agentId);
+    console.log('[ExitButton] Creating agent for', textOnly ? 'text' : 'voice', 'mode, agentId:', agentId, 'signedUrl agent:', signedUrl?.match(/agent_id=([^&]+)/)?.[1] || 'none');
 
     this.elevenLabsAgent = new ElevenLabsAgentHandler({
       agentId,
