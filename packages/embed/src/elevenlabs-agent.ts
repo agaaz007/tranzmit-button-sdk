@@ -96,6 +96,12 @@ export class ElevenLabsAgentHandler {
       const sdkLoaded = await loadElevenLabsSDK();
 
       if (!sdkLoaded || !Conversation || textOnly) {
+        // Create playback context NOW while we have user-gesture context
+        // (browsers block AudioContext creation without recent user interaction)
+        if (!textOnly && !this.playbackContext) {
+          this.playbackContext = new AudioContext({ sampleRate: 16000 });
+          console.log('[ElevenLabs] Playback AudioContext created:', this.playbackContext.state);
+        }
         // Fall back to direct WebSocket connection (also used for text-only mode)
         console.log('[ElevenLabs] Using direct WebSocket', textOnly ? '(text-only)' : '');
         await this.connectDirectWebSocket(textOnly);
@@ -294,6 +300,7 @@ export class ElevenLabsAgentHandler {
       case 'audio':
         // Handle audio response
         if (data.audio_event?.audio_base_64) {
+          console.log('[ElevenLabs] Audio chunk received, length:', data.audio_event.audio_base_64.length);
           this.updateState({ isSpeaking: true });
           this.playBase64Audio(data.audio_event.audio_base_64);
         }
@@ -454,9 +461,15 @@ export class ElevenLabsAgentHandler {
 
     this.isProcessingAudio = true;
 
-    // Create playback context if needed
+    // Create playback context if needed (fallback for edge cases)
     if (!this.playbackContext) {
       this.playbackContext = new AudioContext({ sampleRate: 16000 });
+    }
+
+    // Resume if suspended (browser autoplay policy)
+    if (this.playbackContext.state === 'suspended') {
+      console.log('[ElevenLabs] Resuming suspended AudioContext');
+      await this.playbackContext.resume();
     }
 
     while (this.audioQueue.length > 0) {
