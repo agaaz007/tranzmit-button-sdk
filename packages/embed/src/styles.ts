@@ -298,6 +298,8 @@ export const MODAL_STYLES = `
   border-radius: var(--exit-button-radius-sm);
   font-size: 14px;
   font-family: inherit;
+  color: var(--exit-button-text);
+  background: var(--exit-button-background);
   transition: border-color 0.2s;
 }
 
