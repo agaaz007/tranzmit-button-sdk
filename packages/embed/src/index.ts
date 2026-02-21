@@ -72,8 +72,10 @@ interface ExtendedEmbedConfig extends EmbedConfig {
   elevenLabsApiKey?: string;
   /** ElevenLabs voice ID for legacy TTS mode (defaults to Rachel) */
   elevenLabsVoiceId?: string;
-  /** Intervention agent ID for the AI exit interview */
+  /** Intervention agent ID for the AI voice exit interview */
   interventionAgentId?: string;
+  /** Chat agent ID for text-only exit interview */
+  chatAgentId?: string;
   /** @deprecated Use interventionAgentId instead */
   elevenLabsAgentId?: string;
   /** Signed URL for private agents */
@@ -344,11 +346,17 @@ class ExitButton implements ExitButtonInstance {
   /**
    * Start flow using ElevenLabs Conversational AI Agent
    */
+  // Stored after /initiate so requestPermissionAndConnect can pick the right agent
+  private voiceAgentId: string | null = null;
+  private voiceSignedUrl: string | null = null;
+  private chatAgentIdResolved: string | null = null;
+  private chatSignedUrl: string | null = null;
+  private posthogContext: string | undefined;
+  private dynamicVariablesResolved: Record<string, string> | undefined;
+
   private async startElevenLabsAgentFlow(): Promise<void> {
     let agentId = this.config.elevenLabsAgentId!;
     let signedUrl = this.config.elevenLabsSignedUrl;
-    let posthogContext: string | undefined;
-    let dynamicVariables: Record<string, string> | undefined;
 
     // Use the API client to initiate session (fetches PostHog analytics + signed URL)
     if (this.config.backendUrl) {
@@ -371,11 +379,15 @@ class ExitButton implements ExitButtonInstance {
 
         console.log('[ExitButton] Session initiated:', data.sessionId);
 
-        // Use backend-provided values, but customer's interventionAgentId takes priority
+        // Use backend-provided values, but customer's config takes priority
         if (data.agentId && !this.config.interventionAgentId) agentId = data.agentId;
         if (data.signedUrl) signedUrl = data.signedUrl;
-        if (data.context) posthogContext = data.context;
-        if (data.dynamicVariables) dynamicVariables = data.dynamicVariables;
+        if (data.context) this.posthogContext = data.context;
+        if (data.dynamicVariables) this.dynamicVariablesResolved = data.dynamicVariables;
+
+        // Chat agent — customer config takes priority, then backend
+        this.chatAgentIdResolved = this.config.chatAgentId || data.chatAgentId || null;
+        this.chatSignedUrl = data.chatSignedUrl || null;
 
         // Store session ID from backend
         this.sessionId = data.sessionId;
@@ -384,15 +396,36 @@ class ExitButton implements ExitButtonInstance {
       }
     }
 
+    // Store voice agent info for later
+    this.voiceAgentId = agentId;
+    this.voiceSignedUrl = signedUrl || null;
+
+    // Don't create the agent yet — wait for user to pick voice or text
+    this.setState('permission');
+  }
+
+  /**
+   * Create the ElevenLabs agent handler with the right agent for the chosen mode
+   */
+  private createAgentForMode(textOnly: boolean): void {
+    const agentId = textOnly
+      ? (this.chatAgentIdResolved || this.voiceAgentId!)
+      : this.voiceAgentId!;
+    const signedUrl = textOnly
+      ? (this.chatSignedUrl || this.voiceSignedUrl)
+      : this.voiceSignedUrl;
+
+    console.log('[ExitButton] Creating agent for', textOnly ? 'text' : 'voice', 'mode, agentId:', agentId);
+
     this.elevenLabsAgent = new ElevenLabsAgentHandler({
       agentId,
-      signedUrl,
+      signedUrl: signedUrl || undefined,
       userId: this.config.userId,
       planName: this.config.planName,
       mrr: this.config.mrr,
       accountAge: this.config.accountAge,
-      posthogContext,
-      dynamicVariables, // Pass dynamic variables for ElevenLabs agent
+      posthogContext: this.posthogContext,
+      dynamicVariables: this.dynamicVariablesResolved,
       onStateChange: (state) => {
         this.modal?.updateVoiceState(state);
       },
@@ -407,9 +440,7 @@ class ExitButton implements ExitButtonInstance {
         this.modal?.updateOffers(offers);
       },
       onInterviewComplete: (result) => {
-        // Report completion to backend
         this.reportSessionComplete(result.retained, result.offer);
-
         const mockSession = {
           id: this.sessionId!,
           userId: this.config.userId,
@@ -428,9 +459,6 @@ class ExitButton implements ExitButtonInstance {
         this.handleError(error);
       },
     });
-
-    // Request microphone permission and start
-    this.setState('permission');
   }
 
   /**
@@ -582,17 +610,17 @@ class ExitButton implements ExitButtonInstance {
   }
 
   private async requestPermissionAndConnect(): Promise<void> {
-    // If using ElevenLabs Agent, connect directly (SDK handles permissions)
-    if (this.elevenLabsAgent) {
+    // ElevenLabs Agent flow — create agent for the chosen mode, then connect
+    if (this.useElevenLabsAgent) {
       const textOnly = this.modal?.isFallbackEnabled() ?? false;
+      this.createAgentForMode(textOnly);
       try {
         this.setState('interview');
         if (textOnly) {
           this.modal?.enableFallback();
         }
-        await this.elevenLabsAgent.connect(textOnly);
+        await this.elevenLabsAgent!.connect(textOnly);
       } catch (error) {
-        // If connection fails (e.g., mic denied), fall back to text
         this.modal?.enableFallback();
       }
       return;
@@ -812,6 +840,12 @@ class ExitButton implements ExitButtonInstance {
     this.transcript = [];
     this.prefetchPromise = null;
     this.prefetchDone = false;
+    this.voiceAgentId = null;
+    this.voiceSignedUrl = null;
+    this.chatAgentIdResolved = null;
+    this.chatSignedUrl = null;
+    this.posthogContext = undefined;
+    this.dynamicVariablesResolved = undefined;
   }
 
   private attachToElement(selector: string): void {
@@ -965,6 +999,7 @@ function autoInit(): void {
     attach: script.dataset.attach,
     backendUrl: script.dataset.backendUrl,
     interventionAgentId: script.dataset.interventionAgentId || script.dataset.elevenLabsAgentId,
+    chatAgentId: script.dataset.chatAgentId,
     posthogDistinctId: script.dataset.posthogDistinctId,
     sessionAnalysis: script.dataset.sessionAnalysis !== undefined ? script.dataset.sessionAnalysis !== 'false' : undefined,
   };

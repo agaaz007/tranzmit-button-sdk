@@ -19,6 +19,7 @@ const configSchema = z.object({
   // ElevenLabs (optional — per-tenant credentials from DB take priority)
   elevenLabsApiKey: z.string().optional(),
   elevenLabsAgentId: z.string().optional(),
+  elevenLabsChatAgentId: z.string().optional(),
 
   // Groq (global — Tranzmit's AI analysis service)
   groqApiKey: z.string().min(1, 'GROQ_API_KEY is required'),
@@ -40,6 +41,7 @@ function loadConfig(): Config {
     posthogHost: process.env.POSTHOG_HOST || 'https://app.posthog.com',
     elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
     elevenLabsAgentId: process.env.ELEVENLABS_AGENT_ID,
+    elevenLabsChatAgentId: process.env.ELEVENLABS_CHAT_AGENT_ID,
     groqApiKey: process.env.GROQ_API_KEY,
     databaseUrl: process.env.DATABASE_URL,
     port: process.env.PORT,

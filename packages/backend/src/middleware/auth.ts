@@ -15,6 +15,7 @@ export interface TenantConfig {
   posthogHost: string;
   elevenLabsApiKey?: string;
   interventionAgentId?: string;
+  chatAgentId?: string;
 }
 
 export interface Tenant {
@@ -46,6 +47,7 @@ function getDefaultConfig(): TenantConfig {
     posthogHost: config.posthogHost,
     elevenLabsApiKey: config.elevenLabsApiKey,
     interventionAgentId: config.elevenLabsAgentId,
+    chatAgentId: config.elevenLabsChatAgentId,
   };
 }
 
@@ -69,6 +71,7 @@ async function loadTenantFromDb(keyPrefix: string): Promise<{ id: string; config
         posthogHost: tenants.posthogHost,
         elevenLabsApiKey: tenants.elevenLabsApiKey,
         interventionAgentId: tenants.interventionAgentId,
+        chatAgentId: tenants.chatAgentId,
       })
       .from(apiKeys)
       .innerJoin(tenants, eq(apiKeys.tenantId, tenants.id))
@@ -86,6 +89,7 @@ async function loadTenantFromDb(keyPrefix: string): Promise<{ id: string; config
         posthogHost: row.posthogHost || 'https://app.posthog.com',
         elevenLabsApiKey: row.elevenLabsApiKey || undefined,
         interventionAgentId: row.interventionAgentId || undefined,
+        chatAgentId: row.chatAgentId || undefined,
       },
     };
   } catch (err) {
@@ -126,6 +130,7 @@ export function authenticate(req: any, res: any, next: any): void {
             posthogHost: tenant.config.posthogHost || defaults.posthogHost,
             elevenLabsApiKey: tenant.config.elevenLabsApiKey || defaults.elevenLabsApiKey,
             interventionAgentId: tenant.config.interventionAgentId || defaults.interventionAgentId,
+            chatAgentId: tenant.config.chatAgentId || defaults.chatAgentId,
           },
         };
       } else {

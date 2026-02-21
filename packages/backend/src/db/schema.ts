@@ -25,6 +25,7 @@ export const tenants = pgTable('tenants', {
   posthogHost: text('posthog_host'),
   elevenLabsApiKey: text('elevenlabs_api_key'),
   interventionAgentId: text('intervention_agent_id'),
+  chatAgentId: text('chat_agent_id'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

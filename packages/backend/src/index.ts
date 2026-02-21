@@ -165,6 +165,7 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
     // Get tenant-specific credentials
     const tenantConfig = req.tenant!.config;
     const agentId = tenantConfig.interventionAgentId;
+    const chatAgentId = tenantConfig.chatAgentId;
     const elevenLabsApiKey = tenantConfig.elevenLabsApiKey;
 
     // Build PostHog credentials from tenant config
@@ -186,8 +187,8 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
     const tSignedUrl = Date.now();
     let signedUrl_ms = 0;
 
-    const [signedUrlResult, analysisResult] = await Promise.all([
-      // Task 1: Get signed URL (requires ElevenLabs API key + agent ID)
+    const [signedUrlResult, chatSignedUrlResult, analysisResult] = await Promise.all([
+      // Task 1a: Get signed URL for voice agent
       (agentId && elevenLabsApiKey)
         ? getElevenLabsSignedUrl(agentId, elevenLabsApiKey)
             .then(url => { signedUrl_ms = Date.now() - tSignedUrl; return url; })
@@ -197,6 +198,15 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
               return null;
             })
         : Promise.resolve(null).then(() => { signedUrl_ms = 0; return null; }),
+
+      // Task 1b: Get signed URL for chat agent (if different from voice)
+      (chatAgentId && elevenLabsApiKey && chatAgentId !== agentId)
+        ? getElevenLabsSignedUrl(chatAgentId, elevenLabsApiKey)
+            .catch(e => {
+              logger.warn({ err: e.message }, 'Could not get chat signed URL');
+              return null;
+            })
+        : Promise.resolve(null),
 
       // Task 2: Full session analysis — try prefetch cache first
       ((): Promise<any> => {
@@ -286,6 +296,8 @@ app.post('/api/exit-session/initiate', authenticate, initiateRateLimit, async (r
       sessionId,
       agentId: agentId || null,
       signedUrl: signedUrlResult,
+      chatAgentId: chatAgentId || null,
+      chatSignedUrl: chatSignedUrlResult,
       context: fullContext,
       dynamicVariables,
       elapsed_ms: elapsed,

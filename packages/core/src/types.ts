@@ -199,10 +199,14 @@ export interface Intelligence {
 export interface InitiateResponse {
   /** Session ID */
   sessionId: string;
-  /** ElevenLabs agent ID */
+  /** ElevenLabs voice agent ID */
   agentId: string;
-  /** Signed URL for ElevenLabs private agent */
+  /** Signed URL for voice agent */
   signedUrl: string | null;
+  /** ElevenLabs chat agent ID (text-only mode) */
+  chatAgentId: string | null;
+  /** Signed URL for chat agent */
+  chatSignedUrl: string | null;
   /** AI-generated context for the agent */
   context: string;
   /** Dynamic variables for ElevenLabs agent */
