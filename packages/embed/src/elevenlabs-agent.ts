@@ -62,43 +62,11 @@ async function loadElevenLabsSDK(): Promise<boolean> {
     console.log('[ElevenLabs] Loaded SDK via import');
     return true;
   } catch (e) {
-    console.log('[ElevenLabs] SDK not bundled, trying CDN...');
-  }
-
-  // Try loading from jsdelivr CDN
-  try {
-    await loadScript('https://cdn.jsdelivr.net/npm/@11labs/client@0.2.2/+esm');
-    if ((window as any).Conversation) {
-      Conversation = (window as any).Conversation;
-      return true;
-    }
-  } catch (e) {
-    console.log('[ElevenLabs] jsdelivr failed');
-  }
-
-  // Try unpkg
-  try {
-    await loadScript('https://unpkg.com/@11labs/client@latest/dist/index.cjs.js');
-    if ((window as any).Conversation) {
-      Conversation = (window as any).Conversation;
-      return true;
-    }
-  } catch (e) {
-    console.log('[ElevenLabs] unpkg failed');
+    // SDK not bundled — will fall back to direct WebSocket
+    console.log('[ElevenLabs] SDK not bundled, using direct WebSocket');
   }
 
   return false;
-}
-
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.src = src;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load: ${src}`));
-    document.head.appendChild(script);
-  });
 }
 
 export class ElevenLabsAgentHandler {
